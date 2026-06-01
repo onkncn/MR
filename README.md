@@ -124,6 +124,13 @@ meeting-room/
 
 清除浏览器数据可重置。
 
+## 📱 iOS 兼容性
+
+- **Safari** 为唯一支持的 iOS 浏览器（其他 iOS 浏览器不支持 WebRTC）
+- **麦克风**：iOS 跳过 Web Audio API 管线，直接使用原生音轨（iOS 上 GainNode 行为不稳定）
+- **屏幕共享**：iOS 不支持 `getDisplayMedia` API，此为 Apple 系统限制
+- **音频播放**：iOS Safari 拦截自动播放，远程音频通过显式 `play()` 触发
+
 ## 🌐 外网访问
 
 1. 路由器端口转发：外部端口 → 服务器内网 IP:6789
