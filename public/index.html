@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>语音频道</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="lobby" class="lobby">
+        <div class="lobby-container">
+            <div class="logo">
+                <div class="logo-icon">🎧</div>
+                <h1>语音频道</h1>
+            </div>
+            <p class="subtitle">加入频道开始语音通话和屏幕共享</p>
+            <div class="input-group">
+                <input type="text" id="userName" placeholder="输入你的用户名">
+                <button id="loginBtn" class="primary-btn">
+                    <span>进入</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="room" class="room hidden">
+        <div class="sidebar-left" id="sidebar">
+            <div class="sidebar-top">
+                <div class="user-info-wrapper">
+                    <div class="user-avatar-wrapper">
+                        <div class="avatar-icon" id="localAvatar">你</div>
+                        <div class="status-dot online"></div>
+                    </div>
+                    <div class="user-name" id="localUserDisplay">用户</div>
+                </div>
+                <button id="logoutBtn" class="logout-btn" title="退出">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="channel-list-container">
+                <div class="list-header">
+                    <span class="list-title">频道列表</span>
+                    <button id="addChannelBtn" class="icon-btn" title="创建频道">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div id="channelList" class="channel-list">
+                </div>
+            </div>
+        </div>
+        
+        <div class="resize-handle-v" id="sidebarResizeHandle"></div>
+
+        <button class="sidebar-toggle" id="sidebarToggle" title="菜单">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <div class="mobile-header">
+            <div class="mobile-user-info">
+                <div class="mobile-avatar" id="mobileAvatar">你</div>
+                <span class="mobile-user-name" id="mobileUserName">用户</span>
+            </div>
+            <button class="mobile-logout-btn" id="mobileLogoutBtn" title="退出">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </button>
+        </div>
+
+        <div class="main-content">
+            <div class="current-channel">
+                <div class="channel-header">
+                    <svg class="channel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                    </svg>
+                    <div class="channel-name-wrapper">
+                        <span id="currentChannelName" class="channel-name-display">选择一个频道</span>
+                        <button id="renameBtn" class="rename-btn" title="重命名">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="channel-placeholder" id="channelPlaceholder">
+                    <div class="placeholder-icon">🎧</div>
+                    <div class="placeholder-title">语音频道</div>
+                    <div class="placeholder-text">选择左侧频道列表加入，或创建新频道开始语音通话</div>
+                    <div class="placeholder-actions">
+                        <button id="placeholderSelectBtn" class="placeholder-btn secondary">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                            </svg>
+                            <span>选择频道</span>
+                        </button>
+                        <button id="placeholderCreateBtn" class="placeholder-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            <span>创建频道</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="participantsContainer" class="participants-container hidden">
+                    <div id="screenShareContainer" class="screen-share-container hidden">
+                        <div id="screenShareVideo" class="screen-share-wrapper">
+                            <video id="remoteScreenVideo" autoplay playsinline muted></video>
+                            <div id="screenPlayOverlay" class="screen-play-overlay">
+                                <svg viewBox="0 0 24 24" fill="white" stroke="none">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                            </div>
+                            <div class="screen-share-label">
+                                <span id="screenSharingUser">用户</span> 的屏幕
+                            </div>
+                            <button id="screenMinimizeBtn" class="screen-minimize-btn" title="缩小">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
+                            <button id="screenFullscreenBtn" class="screen-fullscreen-btn" title="全屏">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15 3 21 3 21 9"></polyline>
+                                    <polyline points="9 21 3 21 3 15"></polyline>
+                                    <line x1="21" y1="3" x2="14" y2="10"></line>
+                                    <line x1="3" y1="21" x2="10" y2="14"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="main-controls">
+                <div class="control-btn-wrapper">
+                    <button id="toggleAudioBtn" class="control-btn mic-active" title="麦克风">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
+                    <div class="volume-control">
+                        <div class="volume-label">100%</div>
+                        <div class="volume-slider-wrapper">
+                            <div class="volume-slider-track">
+                                <div class="volume-slider-fill" style="height: 33.33%"></div>
+                                <div class="volume-slider-thumb" style="bottom: 33.33%"></div>
+                            </div>
+                            <input type="range" min="0" max="300" value="100" class="volume-slider-hidden" id="micVolume">
+                        </div>
+                    </div>
+                </div>
+                <div class="control-btn-wrapper">
+                    <button id="toggleVideoBtn" class="control-btn speaker-active" title="扬声器">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                        </svg>
+                    </button>
+                    <div class="volume-control">
+                        <div class="volume-label">100%</div>
+                        <div class="volume-slider-wrapper">
+                            <div class="volume-slider-track">
+                                <div class="volume-slider-fill" style="height: 33.33%"></div>
+                                <div class="volume-slider-thumb" style="bottom: 33.33%"></div>
+                            </div>
+                            <input type="range" min="0" max="300" value="100" class="volume-slider-hidden" id="speakerVolume">
+                        </div>
+                    </div>
+                </div>
+                <button id="toggleScreenShareBtn" class="control-btn" title="共享屏幕">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                </button>
+                <button id="toggleDenoiseBtn" class="control-btn denoise-btn active" title="AI降噪">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                        <line x1="2" y1="2" x2="22" y2="22" stroke-width="2.5"></line>
+                    </svg>
+                    <span class="denoise-label">AI</span>
+                </button>
+                <button id="toggleChatExpandBtn" class="control-btn" title="仅显示聊天">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <div class="resize-handle-v" id="chatResizeHandle"></div>
+        
+        <div class="chat-panel" id="chatPanel">
+            <div class="chat-header">
+                <span class="chat-title">聊天</span>
+                <button id="chatCollapseBtn" class="chat-toggle-btn hidden" title="返回">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-empty">开始聊天吧...</div>
+            </div>
+            <div class="chat-input-area">
+                <div class="chat-preview-area hidden" id="chatPreviewArea"></div>
+                <input type="file" id="chatFileInput" accept="image/*,video/*" style="display: none;">
+                <button id="chatFileBtn" class="chat-file-btn" title="发送图片/视频">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                </button>
+                <input type="text" id="chatInput" placeholder="输入消息..." class="chat-input">
+                <button id="chatSendBtn" class="chat-send-btn" title="发送">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="channelContextMenu" class="channel-context-menu">
+        <div class="channel-context-item" id="ctxRename">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            <span>重命名</span>
+        </div>
+        <div class="channel-context-item" id="ctxJoin">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polygon points="10 8 16 12 10 16 10 8"></polygon>
+            </svg>
+            <span>加入频道</span>
+        </div>
+        <div class="channel-context-item danger" id="ctxDelete">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span>删除频道</span>
+        </div>
+    </div>
+
+    <div id="createModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>创建频道</h3>
+                <button id="closeCreateModal" class="close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="newChannelName" placeholder="频道名称" class="modal-input">
+            </div>
+            <div class="modal-footer">
+                <button id="cancelCreateBtn" class="btn-secondary">取消</button>
+                <button id="confirmCreateBtn" class="btn-primary">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="renameModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>重命名频道</h3>
+                <button id="closeRenameModal" class="close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="renameChannelInput" placeholder="新频道名称" class="modal-input">
+            </div>
+            <div class="modal-footer">
+                <button id="cancelRenameBtn" class="btn-secondary">取消</button>
+                <button id="confirmRenameBtn" class="btn-primary">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
