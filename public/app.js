@@ -10,10 +10,11 @@ let denoiseEnabled = true;
 let screenSharing = false;
 let videoEnabled = true; // 扬声器状态
 
-// Web Audio API — 麦克风音量增益
+// Web Audio API — 麦克风音量增益 + 音频混合
 let audioContext = null;
 let micGainNode = null;
 let micGainDest = null;
+let audioMixDest = null;  // 最终混合输出（麦克风 + 屏幕音频）
 
 // ====== localStorage 持久化 ======
 function loadSavedState() {
@@ -1173,20 +1174,24 @@ async function toggleAudio() {
             
             audioTrack = micStream.getAudioTracks()[0];
             
-            // 建立 Web Audio API 管线：麦克风 → GainNode → 处理后音轨
+            // 建立 Web Audio API 管线：麦克风 → GainNode → 混合输出
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (!audioMixDest) {
+                audioMixDest = audioContext.createMediaStreamDestination();
             }
             const source = audioContext.createMediaStreamSource(micStream);
             micGainNode = audioContext.createGain();
             micGainNode.gain.value = micVolume;
-            micGainDest = audioContext.createMediaStreamDestination();
+            micGainDest = audioContext.createMediaStreamDestination(); // 用于降噪切换时重连
             source.connect(micGainNode);
             micGainNode.connect(micGainDest);
+            micGainNode.connect(audioMixDest); // 混合输出
             
-            // 用处理后的音轨添加到 PeerConnection
-            const processedTrack = micGainDest.stream.getAudioTracks()[0];
-            localStream.addTrack(processedTrack);
+            // 用混合音轨添加到 PeerConnection（单条音频，包含麦克风+屏幕音频）
+            const mixedTrack = audioMixDest.stream.getAudioTracks()[0];
+            localStream.addTrack(mixedTrack);
             
             // 填充所有已有的 PeerConnection 的音频 transceiver
             // 使用 replaceTrack 而非 addTrack，避免产生重复的音频 m-line
@@ -1196,7 +1201,7 @@ async function toggleAudio() {
                     (t.sender && t.sender.track === null && t.receiver?.kind === 'audio')
                 );
                 if (audioTransceiver) {
-                    audioTransceiver.sender.replaceTrack(processedTrack).then(() => {
+                    audioTransceiver.sender.replaceTrack(mixedTrack).then(() => {
                         if (audioTransceiver.direction === 'recvonly') {
                             audioTransceiver.direction = 'sendrecv';
                         }
@@ -1204,7 +1209,7 @@ async function toggleAudio() {
                     });
                 } else {
                     // 没有预创建的 transceiver（极端情况），退回到 addTrack
-                    pc.addTrack(processedTrack, localStream);
+                    pc.addTrack(mixedTrack, localStream);
                     renegotiate(pc, peerId);
                 }
             });
@@ -1277,23 +1282,24 @@ async function toggleDenoise() {
             audioTrack.stop();
             audioTrack = newTrack;
             
-            // 重新连接 GainNode 管线：新麦克风 → GainNode → 处理后音轨
-            if (micGainNode && micGainDest && audioContext) {
+            // 重新连接 GainNode 管线：新麦克风 → GainNode → 混合输出
+            if (micGainNode && audioContext) {
                 const source = audioContext.createMediaStreamSource(newStream);
                 source.connect(micGainNode);
-                micGainNode.connect(micGainDest);
+                if (micGainDest) micGainNode.connect(micGainDest);
+                if (audioMixDest) micGainNode.connect(audioMixDest);
             }
-            const processedTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : newTrack;
+            const mixedTrack = audioMixDest ? audioMixDest.stream.getAudioTracks()[0] : (micGainDest ? micGainDest.stream.getAudioTracks()[0] : newTrack);
             
             // 更新本地流
             localStream.removeTrack(localStream.getAudioTracks()[0]);
-            localStream.addTrack(processedTrack);
+            localStream.addTrack(mixedTrack);
             
             // 替换所有 PeerConnection 中的音轨
             peerConnections.forEach((pc) => {
                 const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
                 if (sender) {
-                    sender.replaceTrack(processedTrack);
+                    sender.replaceTrack(mixedTrack);
                 }
             });
             
@@ -1491,21 +1497,25 @@ async function startScreenShare() {
                     console.warn('设置视频码率失败:', e)
                 );
             }
-            
-            // 发送屏幕音频（如果用户共享了标签页音频）
-            if (audioTracks.length > 0) {
-                // 查找是否已有屏幕音频 sender（非麦克风音频）
-                const micAudioTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : null;
-                const screenAudioSender = micAudioTrack 
-                    ? pc.getSenders().find(s => s.track && s.track.kind === 'audio' && s.track !== micAudioTrack)
-                    : null;
-                if (screenAudioSender) {
-                    screenAudioSender.replaceTrack(audioTracks[0]);
-                } else {
-                    pc.addTrack(audioTracks[0], screenStream);
-                }
-            }
         });
+        
+        // 屏幕音频接入混合器（与麦克风混合成单条音轨）
+        if (audioTracks.length > 0 && audioContext && audioMixDest) {
+            const screenAudioSource = audioContext.createMediaStreamSource(screenStream);
+            screenAudioSource.connect(audioMixDest);
+            // 保存引用，停止共享时断开
+            screenStream._audioSource = screenAudioSource;
+            console.log('屏幕音频已接入混合器');
+            
+            // 更新所有 PeerConnection 的音频 sender 为新的混合音轨
+            const newMixedTrack = audioMixDest.stream.getAudioTracks()[0];
+            peerConnections.forEach((pc) => {
+                const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+                if (audioSender) {
+                    audioSender.replaceTrack(newMixedTrack);
+                }
+            });
+        }
         
         socket.emit('screen-share-status', { user: userName, sharing: true });
         
@@ -1553,6 +1563,11 @@ async function startScreenShare() {
 
 async function stopScreenShare() {
     const oldScreenStream = screenStream;
+    // 断开屏幕音频混合器，恢复纯麦克风混合音轨
+    if (oldScreenStream && oldScreenStream._audioSource) {
+        try { oldScreenStream._audioSource.disconnect(audioMixDest); } catch(e) {}
+        oldScreenStream._audioSource = null;
+    }
     if (screenStream) {
         screenStream.getTracks().forEach(track => track.stop());
         screenStream = null;
@@ -1585,13 +1600,13 @@ async function stopScreenShare() {
         if (videoSender) {
             pc.removeTrack(videoSender);
         }
-        // 移除屏幕音频 sender（非麦克风音频）
-        const micAudioTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : null;
-        const screenAudioSender = micAudioTrack
-            ? pc.getSenders().find(s => s.track && s.track.kind === 'audio' && s.track !== micAudioTrack)
-            : pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-        if (screenAudioSender) {
-            pc.removeTrack(screenAudioSender);
+        // 更新音频 sender 为纯麦克风混合音轨（屏幕音频已从混合器断开）
+        if (audioMixDest) {
+            const micOnlyTrack = audioMixDest.stream.getAudioTracks()[0];
+            const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+            if (audioSender && micOnlyTrack) {
+                audioSender.replaceTrack(micOnlyTrack);
+            }
         }
     });
     
@@ -1604,9 +1619,9 @@ function createPeerConnection(remoteUserName) {
     
     // 始终确保音频收发通道存在
     // 预创建 sendrecv transceiver，开麦时 replaceTrack 填充，不会产生重复 m-line
-    const micProcessedTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : null;
-    if (micProcessedTrack && localStream) {
-        pc.addTrack(micProcessedTrack, localStream);
+    const mixedTrack = audioMixDest ? audioMixDest.stream.getAudioTracks()[0] : null;
+    if (mixedTrack && localStream) {
+        pc.addTrack(mixedTrack, localStream);
     } else if (audioTrack && localStream) {
         pc.addTrack(audioTrack, localStream);
     } else {
@@ -1625,11 +1640,7 @@ function createPeerConnection(remoteUserName) {
                 p.encodings[0].maxFramerate = 60;
                 vSender.setParameters(p).catch(() => {});
             }
-            // 发送屏幕音频
-            const screenAudioTracks = screenStream.getAudioTracks();
-            if (screenAudioTracks.length > 0) {
-                pc.addTrack(screenAudioTracks[0], screenStream);
-            }
+            // 屏幕音频已通过 audioMixDest 混合到单条音轨中，无需单独发送
         }
     }
     
