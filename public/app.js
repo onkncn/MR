@@ -1224,9 +1224,9 @@ async function toggleAudio() {
             
             if (isIOS) {
                 // iOS: 跳过 Web Audio API 管线，直接使用原生音轨
-                // iOS 不支持屏幕共享，无需混合；GainNode 在 iOS 上行为不稳定
                 sendTrack = audioTrack;
-                console.log('[iOS] 直接使用原生麦克风音轨，跳过 Web Audio API');
+                console.log('[iOS] 直接使用原生麦克风音轨');
+                console.log('[iOS] audioTrack:', audioTrack.id, 'enabled:', audioTrack.enabled, 'readyState:', audioTrack.readyState);
             } else {
                 // 桌面端: 建立 Web Audio API 管线：麦克风 → GainNode → 混合输出
                 if (!audioContext) {
@@ -1255,6 +1255,7 @@ async function toggleAudio() {
             }
             
             localStream.addTrack(sendTrack);
+            console.log('[iOS] sendTrack added to localStream, localStream tracks:', localStream.getTracks().map(t => t.kind + ':' + t.id));
             
             // 填充所有已有的 PeerConnection 的音频 transceiver
             peerConnections.forEach((pc, peerId) => {
@@ -1262,18 +1263,20 @@ async function toggleAudio() {
                     t.receiver?.track?.kind === 'audio' || 
                     (t.sender && t.sender.track === null && t.receiver?.kind === 'audio')
                 );
+                console.log('[iOS] peer:', peerId, 'transceiver found:', !!audioTransceiver, 'transceivers:', pc.getTransceivers().map(t => t.direction + ':' + t.receiver?.kind));
                 if (audioTransceiver) {
                     audioTransceiver.sender.replaceTrack(sendTrack).then(() => {
+                        console.log('[iOS] replaceTrack 成功, sender track:', audioTransceiver.sender.track?.id, 'direction:', audioTransceiver.direction);
                         if (audioTransceiver.direction === 'recvonly') {
                             audioTransceiver.direction = 'sendrecv';
                         }
                         renegotiate(pc, peerId);
                     }).catch(err => {
-                        console.error('replaceTrack 失败:', err);
-                        // 降级: 尝试 addTrack
+                        console.error('[iOS] replaceTrack 失败:', err);
                         try { pc.addTrack(sendTrack, localStream); renegotiate(pc, peerId); } catch(e) {}
                     });
                 } else {
+                    console.log('[iOS] 无 audio transceiver, 尝试 addTrack');
                     pc.addTrack(sendTrack, localStream);
                     renegotiate(pc, peerId);
                 }
@@ -1553,10 +1556,13 @@ async function startScreenShare() {
             const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
             if (videoSender) {
                 console.log('替换已有的视频轨道');
-                videoSender.replaceTrack(videoTracks[0]);
+                videoSender.replaceTrack(videoTracks[0]).then(() => {
+                    renegotiate(pc, peerId);
+                });
             } else {
                 console.log('添加新的视频轨道');
                 pc.addTrack(videoTracks[0], screenStream);
+                renegotiate(pc, peerId);
             }
             // 设置视频编码码率上限，提高画质
             const vSender = pc.getSenders().find(s => s.track?.kind === 'video');
@@ -1777,22 +1783,6 @@ function createPeerConnection(remoteUserName) {
         }
     };
     
-    // 当 PeerConnection 的 track 发生变化（添加/移除）时自动触发 renegotiation
-    // 这样对方才能收到我们的新 track（如屏幕共享）
-    let negotiationTimer = null;
-    pc.onnegotiationneeded = () => {
-        // 防抖：短时间内多次触发只执行一次
-        clearTimeout(negotiationTimer);
-        negotiationTimer = setTimeout(() => {
-            if (pc.signalingState === 'stable') {
-                console.log('onnegotiationneeded 触发，开始 renegotiate 与:', remoteUserName);
-                renegotiate(pc, remoteUserName);
-            } else {
-                console.log('onnegotiationneeded 跳过，signalingState:', pc.signalingState);
-            }
-        }, 100);
-    };
-    
     pc.onconnectionstatechange = () => {
         console.log(`与 ${remoteUserName} 的连接状态:`, pc.connectionState);
     };
@@ -1821,7 +1811,12 @@ async function createOfferAndSend(pc, remoteUserName) {
 // 重新协商：当本端添加了新 track 后，需要创建新 offer 发送给对方
 async function renegotiate(pc, remoteUserName) {
     try {
-        console.log('触发 renegotiation 与:', remoteUserName);
+        if (pc.signalingState !== 'stable') {
+            console.log('[renegotiate] 跳过，signalingState:', pc.signalingState);
+            return;
+        }
+        const senders = pc.getSenders().map(s => s.track ? s.track.kind + ':' + s.track.id.substring(0,8) : 'null');
+        console.log('[renegotiate] peer:', remoteUserName, 'senders:', senders);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('offer', {
@@ -1829,8 +1824,9 @@ async function renegotiate(pc, remoteUserName) {
             from: userName,
             to: remoteUserName
         });
+        console.log('[renegotiate] offer 已发送给:', remoteUserName);
     } catch (err) {
-        console.error('Renegotiation 失败:', err);
+        console.error('[renegotiate] 失败:', err.name, err.message);
     }
 }
 
@@ -1963,13 +1959,14 @@ socket.on('user-disconnected', (remoteUserName) => {
 
 socket.on('offer', async (data) => {
     if (data.to !== userName) return;
-    console.log('收到 offer 从:', data.from);
+    const audioLines = data.sdp.sdp ? data.sdp.sdp.split('\r\n').filter(l => l.startsWith('m=audio')) : [];
+    console.log('[收到offer] from:', data.from, 'audio:', audioLines);
     
-    // 复用已有的 PeerConnection（renegotiation 场景）
     let pc = peerConnections.get(data.from);
     if (!pc) {
         pc = createPeerConnection(data.from);
     }
+    console.log('[收到offer] signalingState:', pc.signalingState);
     try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
         const answer = await pc.createAnswer();
@@ -1980,8 +1977,9 @@ socket.on('offer', async (data) => {
             from: userName,
             to: data.from
         });
+        console.log('[收到offer] answer 已发送给:', data.from);
     } catch (err) {
-        console.error('处理 offer 失败:', err);
+        console.error('[收到offer] 处理失败:', err.name, err.message);
     }
 });
 
