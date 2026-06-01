@@ -15,6 +15,7 @@ let audioContext = null;
 let micGainNode = null;
 let micGainDest = null;
 let audioMixDest = null;  // 最终混合输出（麦克风 + 屏幕音频）
+const remoteAudioElements = new Set(); // 追踪远程音频元素
 
 // ====== localStorage 持久化 ======
 function loadSavedState() {
@@ -1145,6 +1146,13 @@ async function leaveChannel() {
     peerConnections.clear();
     participants.clear();
     
+    // 清理远程音频元素
+    remoteAudioElements.forEach(audio => {
+        audio.srcObject = null;
+        audio.pause();
+    });
+    remoteAudioElements.clear();
+    
     socket.emit('leave-channel', currentChannel.id, userName);
     
     currentChannel = null;
@@ -1363,14 +1371,9 @@ function toggleVideo() {
     updateVideoButton();
     saveState('videoEnabled', videoEnabled);
     
-    // 实际控制远程音频音量
-    const remoteAudios = document.querySelectorAll('audio');
-    remoteAudios.forEach(audio => {
+    // 控制所有远程音频
+    remoteAudioElements.forEach(audio => {
         audio.muted = !videoEnabled;
-    });
-    const remoteVideos = document.querySelectorAll('video:not(#remoteScreenVideo)');
-    remoteVideos.forEach(video => {
-        video.muted = !videoEnabled;
     });
 }
 
@@ -1722,8 +1725,13 @@ function createPeerConnection(remoteUserName) {
             const audio = new Audio();
             audio.srcObject = stream;
             audio.autoplay = true;
-            audio.muted = !videoEnabled; // 应用保存的扬声器状态
+            audio.muted = !videoEnabled;
             audio.id = 'remote-audio-' + remoteUserName;
+            remoteAudioElements.add(audio);
+            // 音轨结束时清理
+            event.track.onended = () => {
+                remoteAudioElements.delete(audio);
+            };
         }
     };
     
@@ -1884,11 +1892,13 @@ socket.on('user-disconnected', (remoteUserName) => {
     participants.delete(remoteUserName);
     
     // Clean up remote audio elements
-    const remoteAudio = document.getElementById('remote-audio-' + remoteUserName);
-    if (remoteAudio) {
-        remoteAudio.srcObject = null;
-        remoteAudio.remove();
-    }
+    remoteAudioElements.forEach(audio => {
+        if (audio.id === 'remote-audio-' + remoteUserName) {
+            audio.srcObject = null;
+            audio.pause();
+            remoteAudioElements.delete(audio);
+        }
+    });
     
     // 清理屏幕共享流
     screenStreams.delete(remoteUserName);
