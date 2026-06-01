@@ -1200,15 +1200,22 @@ async function toggleAudio() {
     if (!audioTrack) {
         // 首次开麦，请求麦克风权限
         try {
+            // iOS Safari 不支持部分音频约束参数，使用通用配置
+            const audioConstraints = {
+                echoCancellation: true,
+                noiseSuppression: denoiseEnabled,
+                autoGainControl: true
+            };
+            // 非 iOS 可以指定更精确的参数
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            if (!isIOS) {
+                audioConstraints.sampleRate = 48000;
+                audioConstraints.sampleSize = 16;
+                audioConstraints.channelCount = 1;
+            }
             const micStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: denoiseEnabled,
-                    autoGainControl: true,
-                    sampleRate: 48000,
-                    sampleSize: 16,
-                    channelCount: 1
-                },
+                audio: audioConstraints,
                 video: false
             });
             
@@ -1217,6 +1224,10 @@ async function toggleAudio() {
             // 建立 Web Audio API 管线：麦克风 → GainNode → 混合输出
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            // iOS Safari AudioContext 默认 suspended，必须在用户手势中 resume
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
             }
             if (!audioMixDest) {
                 audioMixDest = audioContext.createMediaStreamDestination();
@@ -1300,15 +1311,20 @@ async function toggleDenoise() {
     if (localStream && audioTrack) {
         try {
             // 重新获取音频流，切换降噪设置
+            const audioConstraints = {
+                echoCancellation: true,
+                noiseSuppression: denoiseEnabled,
+                autoGainControl: true
+            };
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            if (!isIOS) {
+                audioConstraints.sampleRate = 48000;
+                audioConstraints.sampleSize = 16;
+                audioConstraints.channelCount = 1;
+            }
             const newStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: denoiseEnabled,
-                    autoGainControl: true,
-                    sampleRate: 48000,
-                    sampleSize: 16,
-                    channelCount: 1
-                },
+                audio: audioConstraints,
                 video: false
             });
             
@@ -1374,6 +1390,10 @@ function toggleVideo() {
     // 控制所有远程音频
     remoteAudioElements.forEach(audio => {
         audio.muted = !videoEnabled;
+        // 开启扬声器时，尝试播放之前被阻止的音频
+        if (videoEnabled) {
+            audio.play().catch(() => {});
+        }
     });
 }
 
@@ -1724,9 +1744,12 @@ function createPeerConnection(remoteUserName) {
         } else if (event.track.kind === 'audio') {
             const audio = new Audio();
             audio.srcObject = stream;
-            audio.autoplay = true;
             audio.muted = !videoEnabled;
             audio.id = 'remote-audio-' + remoteUserName;
+            // iOS Safari 拦截 autoplay，需要显式 play()
+            audio.play().catch(err => {
+                console.warn('远程音频自动播放被阻止，等待用户交互:', err);
+            });
             remoteAudioElements.add(audio);
             // 音轨结束时清理
             event.track.onended = () => {
