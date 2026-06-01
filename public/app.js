@@ -8,6 +8,35 @@ let currentChannel = null;
 let audioEnabled = true;
 let denoiseEnabled = true;
 let screenSharing = false;
+let videoEnabled = true; // 扬声器状态
+
+// Web Audio API — 麦克风音量增益
+let audioContext = null;
+let micGainNode = null;
+let micGainDest = null;
+
+// ====== localStorage 持久化 ======
+function loadSavedState() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('mr_state') || '{}');
+        if (saved.username) {
+            const input = document.getElementById('userName');
+            if (input) input.value = saved.username;
+        }
+        if (typeof saved.audioEnabled === 'boolean') audioEnabled = saved.audioEnabled;
+        if (typeof saved.videoEnabled === 'boolean') videoEnabled = saved.videoEnabled;
+    } catch (e) {}
+}
+
+function saveState(key, value) {
+    try {
+        const saved = JSON.parse(localStorage.getItem('mr_state') || '{}');
+        saved[key] = value;
+        localStorage.setItem('mr_state', JSON.stringify(saved));
+    } catch (e) {}
+}
+
+loadSavedState();
 let currentScreenSharer = null;
 let participants = new Map();
 const peerConnections = new Map();
@@ -103,6 +132,14 @@ let pendingImages = [];
 let chatMessagesList = [];
 let contextMenuChannel = null;
 let pendingJoinChannel = false;
+
+// 恢复保存的按钮状态
+if (typeof updateVideoButton === 'function') updateVideoButton();
+
+// 有缓存用户名时自动登录
+if (userNameInput && userNameInput.value.trim()) {
+    login();
+}
 
 // 初始化侧边栏状态
 function initSidebar() {
@@ -252,10 +289,12 @@ function setupVolumeSlider(rangeInput, onUpdate) {
 // 麦克风音量
 setupVolumeSlider(micVolumeSlider, (val) => {
     micVolume = val / 100;
-    if (localStream) {
-        localStream.getAudioTracks().forEach(track => {
-            track.enabled = micVolume > 0;
-        });
+    if (micGainNode) {
+        micGainNode.gain.value = micVolume;
+    }
+    // 0 时静音原始音轨（完全关闭麦克风）
+    if (audioTrack) {
+        audioTrack.enabled = micVolume > 0;
     }
 });
 
@@ -581,6 +620,7 @@ function login() {
     }
     
     userName = name;
+    saveState('username', name);
     socket.emit('login', userName);
     lobby.classList.add('hidden');
     room.classList.remove('hidden');
@@ -1028,7 +1068,7 @@ async function joinChannel(channel) {
     document.body.style.cursor = 'wait';
     
     try {
-        // 加入频道时不自动请求麦克风权限，麦克风默认关闭
+        // 加入频道时默认关闭麦克风，如果上次是开的则自动尝试开启
         localStream = new MediaStream();
         audioEnabled = false;
         audioTrack = null;
@@ -1037,6 +1077,14 @@ async function joinChannel(channel) {
         socket.emit('join-channel', channel.id, userName);
         updateAudioButtons();
         updateParticipantsDisplay();
+        
+        // 如果上次麦克风是开启的，自动尝试开麦（会触发权限请求）
+        const savedMicState = (() => {
+            try { return JSON.parse(localStorage.getItem('mr_state') || '{}').audioEnabled; } catch(e) { return false; }
+        })();
+        if (savedMicState) {
+            await toggleAudio();
+        }
     } catch (err) {
         console.error('加入频道失败:', err);
         alert('加入频道失败');
@@ -1068,7 +1116,7 @@ async function leaveChannel() {
     
     currentChannel = null;
     audioTrack = null;
-    audioEnabled = true;
+    audioEnabled = false; // 离开频道时麦克风关闭，下次加入时根据保存状态决定
     currentScreenSharer = null;
     viewingScreenOf = null;
     screenStreams.clear();
@@ -1124,27 +1172,40 @@ async function toggleAudio() {
             });
             
             audioTrack = micStream.getAudioTracks()[0];
-            localStream.addTrack(audioTrack);
             
-            // 添加到所有已有的 PeerConnection，并触发 renegotiation
+            // 建立 Web Audio API 管线：麦克风 → GainNode → 处理后音轨
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const source = audioContext.createMediaStreamSource(micStream);
+            micGainNode = audioContext.createGain();
+            micGainNode.gain.value = micVolume;
+            micGainDest = audioContext.createMediaStreamDestination();
+            source.connect(micGainNode);
+            micGainNode.connect(micGainDest);
+            
+            // 用处理后的音轨添加到 PeerConnection
+            const processedTrack = micGainDest.stream.getAudioTracks()[0];
+            localStream.addTrack(processedTrack);
+            
+            // 填充所有已有的 PeerConnection 的音频 transceiver
+            // 使用 replaceTrack 而非 addTrack，避免产生重复的音频 m-line
             peerConnections.forEach((pc, peerId) => {
-                if (pc.signalingState === 'stable') {
-                    pc.addTrack(audioTrack, localStream);
-                    // 手动触发 renegotiation
-                    renegotiate(pc, peerId);
-                } else {
-                    // 如果还在协商中，等稳定后再添加
-                    pc.addEventListener('signalingstatechange', function onStable() {
-                        if (pc.signalingState === 'stable') {
-                            pc.removeEventListener('signalingstatechange', onStable);
-                            // 检查是否已经添加了音频 sender
-                            const hasAudioSender = pc.getSenders().some(s => s.track && s.track.kind === 'audio');
-                            if (!hasAudioSender) {
-                                pc.addTrack(audioTrack, localStream);
-                            }
-                            renegotiate(pc, peerId);
+                const audioTransceiver = pc.getTransceivers().find(t => 
+                    t.receiver?.track?.kind === 'audio' || 
+                    (t.sender && t.sender.track === null && t.receiver?.kind === 'audio')
+                );
+                if (audioTransceiver) {
+                    audioTransceiver.sender.replaceTrack(processedTrack).then(() => {
+                        if (audioTransceiver.direction === 'recvonly') {
+                            audioTransceiver.direction = 'sendrecv';
                         }
+                        renegotiate(pc, peerId);
                     });
+                } else {
+                    // 没有预创建的 transceiver（极端情况），退回到 addTrack
+                    pc.addTrack(processedTrack, localStream);
+                    renegotiate(pc, peerId);
                 }
             });
             
@@ -1162,6 +1223,7 @@ async function toggleAudio() {
     updateAudioButtons();
     updateParticipantsDisplay();
     socket.emit('audio-status', { user: userName, enabled: audioEnabled });
+    saveState('audioEnabled', audioEnabled);
 }
 
 function updateAudioButtons() {
@@ -1213,14 +1275,25 @@ async function toggleDenoise() {
             // 替换本地流中的音轨
             localStream.removeTrack(audioTrack);
             audioTrack.stop();
-            localStream.addTrack(newTrack);
             audioTrack = newTrack;
+            
+            // 重新连接 GainNode 管线：新麦克风 → GainNode → 处理后音轨
+            if (micGainNode && micGainDest && audioContext) {
+                const source = audioContext.createMediaStreamSource(newStream);
+                source.connect(micGainNode);
+                micGainNode.connect(micGainDest);
+            }
+            const processedTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : newTrack;
+            
+            // 更新本地流
+            localStream.removeTrack(localStream.getAudioTracks()[0]);
+            localStream.addTrack(processedTrack);
             
             // 替换所有 PeerConnection 中的音轨
             peerConnections.forEach((pc) => {
                 const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
                 if (sender) {
-                    sender.replaceTrack(newTrack);
+                    sender.replaceTrack(processedTrack);
                 }
             });
             
@@ -1247,11 +1320,10 @@ function updateDenoiseButton() {
     }
 }
 
-let videoEnabled = true;
-
 function toggleVideo() {
     videoEnabled = !videoEnabled;
     updateVideoButton();
+    saveState('videoEnabled', videoEnabled);
     
     // 实际控制远程音频音量
     const remoteAudios = document.querySelectorAll('audio');
@@ -1342,7 +1414,7 @@ async function startScreenShare() {
         
         let constraints = {
             video: true,
-            audio: false
+            audio: true  // 请求屏幕音频（需要选择"标签页"共享才能捕获声音）
         };
         
         if (!isIOS) {
@@ -1382,7 +1454,8 @@ async function startScreenShare() {
         }
         
         const videoTracks = screenStream.getVideoTracks();
-        console.log('视频轨道数量:', videoTracks.length);
+        const audioTracks = screenStream.getAudioTracks();
+        console.log('视频轨道数量:', videoTracks.length, '音频轨道数量:', audioTracks.length);
         
         if (videoTracks.length === 0) {
             alert('未找到视频轨道');
@@ -1396,26 +1469,41 @@ async function startScreenShare() {
         updateParticipantsDisplay();
         
         peerConnections.forEach((pc, peerId) => {
-            const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) {
+            // 发送屏幕视频
+            const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+            if (videoSender) {
                 console.log('替换已有的视频轨道');
-                sender.replaceTrack(videoTracks[0]);
+                videoSender.replaceTrack(videoTracks[0]);
             } else {
                 console.log('添加新的视频轨道');
                 pc.addTrack(videoTracks[0], screenStream);
             }
             // 设置视频编码码率上限，提高画质
-            const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
-            if (videoSender) {
-                const params = videoSender.getParameters();
+            const vSender = pc.getSenders().find(s => s.track?.kind === 'video');
+            if (vSender) {
+                const params = vSender.getParameters();
                 if (!params.encodings || params.encodings.length === 0) {
                     params.encodings = [{}];
                 }
                 params.encodings[0].maxBitrate = 4_000_000; // 4Mbps
                 params.encodings[0].maxFramerate = 60;
-                videoSender.setParameters(params).catch(e => 
+                vSender.setParameters(params).catch(e =>
                     console.warn('设置视频码率失败:', e)
                 );
+            }
+            
+            // 发送屏幕音频（如果用户共享了标签页音频）
+            if (audioTracks.length > 0) {
+                // 查找是否已有屏幕音频 sender（非麦克风音频）
+                const micAudioTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : null;
+                const screenAudioSender = micAudioTrack 
+                    ? pc.getSenders().find(s => s.track && s.track.kind === 'audio' && s.track !== micAudioTrack)
+                    : null;
+                if (screenAudioSender) {
+                    screenAudioSender.replaceTrack(audioTracks[0]);
+                } else {
+                    pc.addTrack(audioTracks[0], screenStream);
+                }
             }
         });
         
@@ -1492,9 +1580,18 @@ async function stopScreenShare() {
     updateScreenShareBar();
     
     peerConnections.forEach((pc, peerId) => {
-        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-            pc.removeTrack(sender);
+        // 移除屏幕视频 sender
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+            pc.removeTrack(videoSender);
+        }
+        // 移除屏幕音频 sender（非麦克风音频）
+        const micAudioTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : null;
+        const screenAudioSender = micAudioTrack
+            ? pc.getSenders().find(s => s.track && s.track.kind === 'audio' && s.track !== micAudioTrack)
+            : pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+        if (screenAudioSender) {
+            pc.removeTrack(screenAudioSender);
         }
     });
     
@@ -1506,13 +1603,14 @@ function createPeerConnection(remoteUserName) {
     peerConnections.set(remoteUserName, pc);
     
     // 始终确保音频收发通道存在
-    // 即使当前没有 audioTrack，也要创建一个 recvonly 的音频 transceiver
-    // 这样对方开麦后 renegotiate 时我们能收到音频
-    if (audioTrack && localStream) {
+    // 预创建 sendrecv transceiver，开麦时 replaceTrack 填充，不会产生重复 m-line
+    const micProcessedTrack = micGainDest ? micGainDest.stream.getAudioTracks()[0] : null;
+    if (micProcessedTrack && localStream) {
+        pc.addTrack(micProcessedTrack, localStream);
+    } else if (audioTrack && localStream) {
         pc.addTrack(audioTrack, localStream);
     } else {
-        // 没有麦克风时，显式添加收听通道
-        pc.addTransceiver('audio', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
     }
     
     if (localStream) {
@@ -1526,6 +1624,11 @@ function createPeerConnection(remoteUserName) {
                 p.encodings[0].maxBitrate = 4_000_000;
                 p.encodings[0].maxFramerate = 60;
                 vSender.setParameters(p).catch(() => {});
+            }
+            // 发送屏幕音频
+            const screenAudioTracks = screenStream.getAudioTracks();
+            if (screenAudioTracks.length > 0) {
+                pc.addTrack(screenAudioTracks[0], screenStream);
             }
         }
     }
@@ -1576,8 +1679,25 @@ function createPeerConnection(remoteUserName) {
             const audio = new Audio();
             audio.srcObject = stream;
             audio.autoplay = true;
+            audio.muted = !videoEnabled; // 应用保存的扬声器状态
             audio.id = 'remote-audio-' + remoteUserName;
         }
+    };
+    
+    // 当 PeerConnection 的 track 发生变化（添加/移除）时自动触发 renegotiation
+    // 这样对方才能收到我们的新 track（如屏幕共享）
+    let negotiationTimer = null;
+    pc.onnegotiationneeded = () => {
+        // 防抖：短时间内多次触发只执行一次
+        clearTimeout(negotiationTimer);
+        negotiationTimer = setTimeout(() => {
+            if (pc.signalingState === 'stable') {
+                console.log('onnegotiationneeded 触发，开始 renegotiate 与:', remoteUserName);
+                renegotiate(pc, remoteUserName);
+            } else {
+                console.log('onnegotiationneeded 跳过，signalingState:', pc.signalingState);
+            }
+        }, 100);
     };
     
     pc.onconnectionstatechange = () => {

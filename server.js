@@ -23,7 +23,8 @@ const options = {
 
 const server = https.createServer(options, app);
 const io = new Server(server, {
-  cors: config.cors
+  cors: config.cors,
+  maxHttpBufferSize: 50 * 1024 * 1024 // 50MB，允许发送大图片
 });
 
 app.use(cors());
