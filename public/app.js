@@ -1197,18 +1197,17 @@ async function toggleAudio() {
         return;
     }
     
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
     if (!audioTrack) {
         // 首次开麦，请求麦克风权限
         try {
-            // iOS Safari 不支持部分音频约束参数，使用通用配置
             const audioConstraints = {
                 echoCancellation: true,
                 noiseSuppression: denoiseEnabled,
                 autoGainControl: true
             };
-            // 非 iOS 可以指定更精确的参数
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             if (!isIOS) {
                 audioConstraints.sampleRate = 48000;
                 audioConstraints.sampleSize = 16;
@@ -1221,46 +1220,61 @@ async function toggleAudio() {
             
             audioTrack = micStream.getAudioTracks()[0];
             
-            // 建立 Web Audio API 管线：麦克风 → GainNode → 混合输出
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            // iOS Safari AudioContext 默认 suspended，必须在用户手势中 resume
-            if (audioContext.state === 'suspended') {
-                await audioContext.resume();
-            }
-            if (!audioMixDest) {
-                audioMixDest = audioContext.createMediaStreamDestination();
-            }
-            const source = audioContext.createMediaStreamSource(micStream);
-            micGainNode = audioContext.createGain();
-            micGainNode.gain.value = micVolume;
-            micGainDest = audioContext.createMediaStreamDestination(); // 用于降噪切换时重连
-            source.connect(micGainNode);
-            micGainNode.connect(micGainDest);
-            micGainNode.connect(audioMixDest); // 混合输出
+            let sendTrack; // 实际发送给 PeerConnection 的音轨
             
-            // 用混合音轨添加到 PeerConnection（单条音频，包含麦克风+屏幕音频）
-            const mixedTrack = audioMixDest.stream.getAudioTracks()[0];
-            localStream.addTrack(mixedTrack);
+            if (isIOS) {
+                // iOS: 跳过 Web Audio API 管线，直接使用原生音轨
+                // iOS 不支持屏幕共享，无需混合；GainNode 在 iOS 上行为不稳定
+                sendTrack = audioTrack;
+                console.log('[iOS] 直接使用原生麦克风音轨，跳过 Web Audio API');
+            } else {
+                // 桌面端: 建立 Web Audio API 管线：麦克风 → GainNode → 混合输出
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                if (!audioMixDest) {
+                    audioMixDest = audioContext.createMediaStreamDestination();
+                }
+                const source = audioContext.createMediaStreamSource(micStream);
+                micGainNode = audioContext.createGain();
+                micGainNode.gain.value = micVolume;
+                micGainDest = audioContext.createMediaStreamDestination();
+                source.connect(micGainNode);
+                micGainNode.connect(micGainDest);
+                micGainNode.connect(audioMixDest);
+                
+                sendTrack = audioMixDest.stream.getAudioTracks()[0];
+                if (!sendTrack) {
+                    // Web Audio API 未产出 track，降级到原生音轨
+                    console.warn('Web Audio API 未产出音轨，降级使用原生音轨');
+                    sendTrack = audioTrack;
+                }
+            }
+            
+            localStream.addTrack(sendTrack);
             
             // 填充所有已有的 PeerConnection 的音频 transceiver
-            // 使用 replaceTrack 而非 addTrack，避免产生重复的音频 m-line
             peerConnections.forEach((pc, peerId) => {
                 const audioTransceiver = pc.getTransceivers().find(t => 
                     t.receiver?.track?.kind === 'audio' || 
                     (t.sender && t.sender.track === null && t.receiver?.kind === 'audio')
                 );
                 if (audioTransceiver) {
-                    audioTransceiver.sender.replaceTrack(mixedTrack).then(() => {
+                    audioTransceiver.sender.replaceTrack(sendTrack).then(() => {
                         if (audioTransceiver.direction === 'recvonly') {
                             audioTransceiver.direction = 'sendrecv';
                         }
                         renegotiate(pc, peerId);
+                    }).catch(err => {
+                        console.error('replaceTrack 失败:', err);
+                        // 降级: 尝试 addTrack
+                        try { pc.addTrack(sendTrack, localStream); renegotiate(pc, peerId); } catch(e) {}
                     });
                 } else {
-                    // 没有预创建的 transceiver（极端情况），退回到 addTrack
-                    pc.addTrack(mixedTrack, localStream);
+                    pc.addTrack(sendTrack, localStream);
                     renegotiate(pc, peerId);
                 }
             });
@@ -1268,7 +1282,7 @@ async function toggleAudio() {
             audioEnabled = true;
         } catch (err) {
             console.error('获取麦克风失败:', err);
-            alert('无法访问麦克风，请允许权限');
+            alert('无法访问麦克风，请允许权限\n\n' + (err.name || err.message || err));
             return;
         }
     } else {
@@ -1309,6 +1323,8 @@ async function toggleDenoise() {
     denoiseEnabled = !denoiseEnabled;
     
     if (localStream && audioTrack) {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         try {
             // 重新获取音频流，切换降噪设置
             const audioConstraints = {
@@ -1316,8 +1332,6 @@ async function toggleDenoise() {
                 noiseSuppression: denoiseEnabled,
                 autoGainControl: true
             };
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             if (!isIOS) {
                 audioConstraints.sampleRate = 48000;
                 audioConstraints.sampleSize = 16;
@@ -1329,8 +1343,6 @@ async function toggleDenoise() {
             });
             
             const newTrack = newStream.getAudioTracks()[0];
-            
-            // 保留之前的 enabled 状态
             newTrack.enabled = audioEnabled;
             
             // 替换本地流中的音轨
@@ -1338,24 +1350,32 @@ async function toggleDenoise() {
             audioTrack.stop();
             audioTrack = newTrack;
             
-            // 重新连接 GainNode 管线：新麦克风 → GainNode → 混合输出
-            if (micGainNode && audioContext) {
-                const source = audioContext.createMediaStreamSource(newStream);
-                source.connect(micGainNode);
-                if (micGainDest) micGainNode.connect(micGainDest);
-                if (audioMixDest) micGainNode.connect(audioMixDest);
+            let sendTrack;
+            
+            if (isIOS) {
+                // iOS: 直接使用原生音轨
+                sendTrack = newTrack;
+            } else {
+                // 桌面端: 重新连接 GainNode 管线
+                if (micGainNode && audioContext) {
+                    const source = audioContext.createMediaStreamSource(newStream);
+                    source.connect(micGainNode);
+                    if (micGainDest) micGainNode.connect(micGainDest);
+                    if (audioMixDest) micGainNode.connect(audioMixDest);
+                }
+                sendTrack = audioMixDest ? audioMixDest.stream.getAudioTracks()[0] : 
+                            (micGainDest ? micGainDest.stream.getAudioTracks()[0] : newTrack);
             }
-            const mixedTrack = audioMixDest ? audioMixDest.stream.getAudioTracks()[0] : (micGainDest ? micGainDest.stream.getAudioTracks()[0] : newTrack);
             
             // 更新本地流
             localStream.removeTrack(localStream.getAudioTracks()[0]);
-            localStream.addTrack(mixedTrack);
+            localStream.addTrack(sendTrack);
             
             // 替换所有 PeerConnection 中的音轨
             peerConnections.forEach((pc) => {
                 const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
                 if (sender) {
-                    sender.replaceTrack(mixedTrack);
+                    sender.replaceTrack(sendTrack).catch(e => console.warn('降噪切换 replaceTrack 失败:', e));
                 }
             });
             
@@ -1363,7 +1383,6 @@ async function toggleDenoise() {
             console.log('Track settings:', newTrack.getSettings());
         } catch (err) {
             console.error('切换降噪失败:', err);
-            // 回滚状态
             denoiseEnabled = !denoiseEnabled;
             return;
         }
