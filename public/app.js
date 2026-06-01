@@ -888,9 +888,137 @@ function switchScreenView(targetUser) {
     // 更新参与者头像高亮
     updateParticipantsDisplay();
     updateChannelList(); // 刷新侧边栏参与者头像高亮
+    updateScreenShareBar(); // 刷新头像条和指示器
     
     console.log('切换观看:', targetUser, '的屏幕');
 }
+
+// ====== 多人共享头像条 + 滑动指示器 ======
+function updateScreenShareBar() {
+    const bar = document.getElementById('screenShareBar');
+    const barList = document.getElementById('screenShareBarList');
+    const indicator = document.getElementById('screenSwipeIndicator');
+    if (!bar || !barList || !indicator) return;
+    
+    // 收集所有正在共享的用户（含自己）
+    const sharers = [];
+    if (screenSharing) sharers.push(userName);
+    screenStreams.forEach((_, name) => {
+        if (name !== userName && !sharers.includes(name)) sharers.push(name);
+    });
+    
+    // 单人或无人共享时隐藏
+    if (sharers.length < 2) {
+        bar.classList.add('hidden');
+        indicator.classList.add('hidden');
+        return;
+    }
+    
+    // 渲染头像条
+    bar.classList.remove('hidden');
+    barList.innerHTML = '';
+    sharers.forEach(name => {
+        const isSelf = name === userName;
+        const isActive = viewingScreenOf === name;
+        
+        const item = document.createElement('div');
+        item.className = 'screen-share-bar-item' + (isActive ? ' active' : '');
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'screen-share-bar-avatar';
+        avatar.textContent = name.charAt(0).toUpperCase();
+        
+        const nameEl = document.createElement('span');
+        nameEl.className = 'screen-share-bar-name';
+        nameEl.textContent = isSelf ? name + ' (你)' : name;
+        
+        item.appendChild(avatar);
+        item.appendChild(nameEl);
+        
+        item.addEventListener('click', () => {
+            switchScreenView(name);
+        });
+        
+        barList.appendChild(item);
+    });
+    
+    // 滚动到当前活跃项
+    const activeItem = barList.querySelector('.screen-share-bar-item.active');
+    if (activeItem) {
+        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+    
+    // 渲染滑动指示器
+    indicator.classList.remove('hidden');
+    indicator.innerHTML = '';
+    const currentIdx = sharers.indexOf(viewingScreenOf);
+    sharers.forEach((_, i) => {
+        const dot = document.createElement('div');
+        dot.className = 'screen-swipe-dot' + (i === currentIdx ? ' active' : '');
+        dot.addEventListener('click', () => switchScreenView(sharers[i]));
+        indicator.appendChild(dot);
+    });
+}
+
+// 屏幕共享区域左右滑动手势
+(function initScreenSwipe() {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let swiping = false;
+    
+    const screenWrapper = document.getElementById('screenShareVideo');
+    if (!screenWrapper) return;
+    
+    screenWrapper.addEventListener('touchstart', (e) => {
+        const sharers = getScreenSharers();
+        if (sharers.length < 2) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        swiping = true;
+    }, { passive: true });
+    
+    screenWrapper.addEventListener('touchmove', (e) => {
+        if (!swiping) return;
+        // 判断是否为横向滑动
+        const dx = Math.abs(e.touches[0].clientX - touchStartX);
+        const dy = Math.abs(e.touches[0].clientY - touchStartY);
+        if (dy > dx) {
+            swiping = false; // 纵向滑动，放弃
+        }
+    }, { passive: true });
+    
+    screenWrapper.addEventListener('touchend', (e) => {
+        if (!swiping) return;
+        swiping = false;
+        
+        const dx = e.changedTouches[0].clientX - touchStartX;
+        if (Math.abs(dx) < 50) return; // 滑动距离不够
+        
+        const sharers = getScreenSharers();
+        if (sharers.length < 2) return;
+        
+        const currentIdx = sharers.indexOf(viewingScreenOf);
+        let nextIdx;
+        if (dx < 0) {
+            // 左滑 → 下一个
+            nextIdx = (currentIdx + 1) % sharers.length;
+        } else {
+            // 右滑 → 上一个
+            nextIdx = (currentIdx - 1 + sharers.length) % sharers.length;
+        }
+        
+        switchScreenView(sharers[nextIdx]);
+    }, { passive: true });
+    
+    function getScreenSharers() {
+        const sharers = [];
+        if (screenSharing) sharers.push(userName);
+        screenStreams.forEach((_, name) => {
+            if (name !== userName && !sharers.includes(name)) sharers.push(name);
+        });
+        return sharers;
+    }
+})();
 
 async function joinChannel(channel) {
     if (currentChannel) {
@@ -944,6 +1072,7 @@ async function leaveChannel() {
     currentScreenSharer = null;
     viewingScreenOf = null;
     screenStreams.clear();
+    updateScreenShareBar();
     remoteScreenVideo.srcObject = null;
     showScreenShare(null);
     
@@ -1300,6 +1429,7 @@ async function startScreenShare() {
         // 在屏幕共享容器中显示自己的屏幕
         screenStreams.set(userName, screenStream);
         viewingScreenOf = userName;
+        updateScreenShareBar();
         remoteScreenVideo.srcObject = screenStream;
         remoteScreenVideo.autoplay = true;
         remoteScreenVideo.muted = true;
@@ -1359,6 +1489,7 @@ async function stopScreenShare() {
     screenSharing = false;
     updateScreenShareButton();
     updateParticipantsDisplay();
+    updateScreenShareBar();
     
     peerConnections.forEach((pc, peerId) => {
         const sender = pc.getSenders().find(s => s.track?.kind === 'video');
@@ -1422,11 +1553,13 @@ function createPeerConnection(remoteUserName) {
                 switchScreenView(remoteUserName);
             }
             updateParticipantsDisplay();
+            updateScreenShareBar();
             
             // 视频轨道结束时清理
             event.track.onended = () => {
                 console.log(remoteUserName, '的屏幕共享轨道结束');
                 screenStreams.delete(remoteUserName);
+                updateScreenShareBar();
                 if (viewingScreenOf === remoteUserName) {
                     const otherSharers = Array.from(screenStreams.keys());
                     if (otherSharers.length > 0) {
@@ -1596,6 +1729,7 @@ socket.on('user-disconnected', (remoteUserName) => {
     
     // 清理屏幕共享流
     screenStreams.delete(remoteUserName);
+    updateScreenShareBar();
     
     // 如果正在观看离开者的屏幕，切换到其他人或隐藏
     if (viewingScreenOf === remoteUserName) {
@@ -1689,7 +1823,8 @@ socket.on('screen-share-status', (data) => {
     if (participants.has(data.user)) {
         participants.get(data.user).screenSharing = data.sharing;
         updateParticipantsDisplay();
-        updateChannelList(); // 刷新侧边栏屏幕共享标记
+        updateChannelList();
+        updateScreenShareBar(); // 刷新侧边栏屏幕共享标记
     }
     
     if (data.user !== userName) {
@@ -1698,6 +1833,7 @@ socket.on('screen-share-status', (data) => {
         } else {
             // 对方停止共享，清理其屏幕流
             screenStreams.delete(data.user);
+            updateScreenShareBar();
             if (viewingScreenOf === data.user) {
                 const otherSharers = Array.from(screenStreams.keys());
                 if (otherSharers.length > 0) {
