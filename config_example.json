@@ -1,0 +1,31 @@
+{
+  "port": 6789,
+  "host": "0.0.0.0",
+  "domain": "onkn.cn",
+  "ssl": {
+    "key": "../.ssl/key.pem",
+    "cert": "../.ssl/cert.pem"
+  },
+  "iceServers": [
+    { "urls": "stun:stun.l.google.com:19302" },
+    { "urls": "stun:stun1.l.google.com:19302" },
+    { "urls": "stun:stun2.l.google.com:19302" },
+    { "urls": "stun:stun3.l.google.com:19302" },
+    { "urls": "stun:stun4.l.google.com:19302" },
+    { "urls": "stun:global.stun.twilio.com:3478" },
+    { "urls": "stun:stun.relay.metered.ca:80" },
+    {
+      "urls": "turn:YOUR_TURN_IP:3478",
+      "username": "YOUR_TURN_USERNAME",
+      "credential": "YOUR_TURN_CREDENTIAL"
+    },
+    {
+      "urls": "turn:YOUR_DOMAIN:3478",
+      "username": "YOUR_TURN_USERNAME",
+      "credential": "YOUR_TURN_CREDENTIAL"
+    }
+  ],
+  "cors": {
+    "origin": "*"
+  }
+}

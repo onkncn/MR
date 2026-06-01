@@ -15,32 +15,28 @@ const screenStreams = new Map(); // 存储每个用户的屏幕共享流
 let viewingScreenOf = null; // 当前正在观看谁的屏幕
 const channelList = [];
 
-const configuration = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' },
-        { urls: 'stun:stun.relay.metered.ca:80' },
-        {
-            urls: 'turn:203.10.99.58:3478',
-            username: 'meetingroom',
-            credential: 'meetingroom123'
-        },
-        {
-            urls: 'turn:onkn.cn:3478',
-            username: 'meetingroom',
-            credential: 'meetingroom123'
-        }
-    ],
+// 从服务端获取 ICE 配置
+let configuration = {
     iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     iceTransportPolicy: 'all',
     sdpSemantics: 'unified-plan'
 };
+
+fetch('/api/config')
+    .then(res => res.json())
+    .then(cfg => {
+        configuration.iceServers = cfg.iceServers;
+        console.log('ICE 配置已加载:', cfg.iceServers.length, '个服务器');
+    })
+    .catch(err => {
+        console.warn('加载 ICE 配置失败，使用默认 STUN:', err);
+        configuration.iceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ];
+    });
 
 const lobby = document.getElementById('lobby');
 const room = document.getElementById('room');

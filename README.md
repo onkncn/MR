@@ -1,155 +1,106 @@
-# 语音频道 - 多人语音通话 & 屏幕共享
+# Meeting Room - WebRTC 语音频道
 
-一个基于 WebRTC 的实时语音频道应用，支持多人语音通话、屏幕共享和频道管理。
+基于 WebRTC 的多人语音通话与屏幕共享应用。
 
 ## 功能特性
 
 - 🎤 多人实时语音通话
-- 📺 屏幕共享（支持全屏观看）
-- 🏠 频道创建、加入和重命名
-- 🔊 麦克风/扬声器音量控制（自定义竖向滑块，0%~300%）
-- 🤖 AI 降噪开关（基于 Chrome 内置 RNNoise 神经网络）
-- 💬 文字聊天（支持发送图片/视频）
-- 💬 聊天全屏模式（桌面端/移动端均支持）
-- 📱 响应式设计，支持移动端
-- 🔒 HTTPS 加密通信（内置 SSL）
+- 📺 多人屏幕共享（点击侧边栏头像切换观看）
+- 🔇 AI 降噪（Chrome 内置 RNNoise 神经网络）
+- 💬 文字聊天（支持图片/视频）
+- 📱 响应式设计，移动端适配
+- 🔊 自定义音量滑块（麦克风/扬声器独立控制）
 
-## 技术栈
-
-- **后端**: Node.js + Express + Socket.io
-- **前端**: 原生 HTML/CSS/JavaScript
-- **实时通信**: WebRTC
-- **安全传输**: HTTPS
-
-## 安装和运行
-
-### 前置条件
-
-- Node.js 14+
-- SSL 证书文件（需放置在项目目录上一级的 `.ssl/` 文件夹中）
+## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-cd meeting-room
 npm install
 ```
 
-### 2. 配置 SSL 证书
+### 2. 配置
 
-确保在 `../.ssl/` 目录下存在以下文件：
-- `key.pem` - SSL 私钥
-- `cert.pem` - SSL 证书
+```bash
+cp config_example.json config.json
+```
 
-### 3. 启动服务器
+编辑 `config.json`，填写你的配置：
+
+```json
+{
+  "port": 6789,
+  "host": "0.0.0.0",
+  "domain": "your-domain.com",
+  "ssl": {
+    "key": "path/to/key.pem",
+    "cert": "path/to/cert.pem"
+  },
+  "iceServers": [
+    { "urls": "stun:stun.l.google.com:19302" },
+    {
+      "urls": "turn:your-turn-server:3478",
+      "username": "your-username",
+      "credential": "your-credential"
+    }
+  ],
+  "cors": {
+    "origin": "*"
+  }
+}
+```
+
+### 3. 启动
 
 ```bash
 npm start
 ```
 
-开发模式（自动重启）:
+访问 `https://localhost:6789`。
 
-```bash
-npm run dev
-```
+## 配置说明
 
-### 4. 访问应用
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `port` | 服务端口 | `6789` |
+| `host` | 监听地址 | `0.0.0.0` |
+| `domain` | 外网域名（用于日志显示） | `localhost` |
+| `ssl.key` | SSL 私钥路径 | - |
+| `ssl.cert` | SSL 证书路径 | - |
+| `iceServers` | WebRTC ICE 服务器列表 | Google STUN |
+| `cors.origin` | CORS 允许的来源 | `*` |
 
-服务器默认运行在 **6789** 端口：
+### ICE 服务器
 
-- 本地访问: `https://localhost:6789`
-- 局域网访问: `https://<本机IP>:6789`
-- 外网访问: `https://onkn.cn:6789`
+**STUN 服务器**（免费，用于获取公网 IP）：
+- `stun:stun.l.google.com:19302`
+- `stun:global.stun.twilio.com:3478`
 
-> **注意**: 首次访问时浏览器会提示证书不安全，请点击「高级」→「继续访问」
-
-## 使用说明
-
-### 1. 进入系统
-
-1. 打开应用页面
-2. 输入你的用户名
-3. 点击「进入」按钮
-
-### 2. 创建频道
-
-1. 点击频道列表旁的「+」按钮
-2. 输入频道名称
-3. 点击「创建」
-
-### 3. 加入频道
-
-1. 在频道列表中点击要加入的频道
-2. 进入频道后即可开始语音通话
-
-### 4. 频道管理
-
-- **重命名频道**: 点击频道名称旁的编辑图标
-- **离开频道**: 点击左上角的退出按钮
-
-### 5. 语音控制
-
-- **麦克风**: 点击底部麦克风图标开启/关闭
-- **扬声器**: 点击扬声器图标控制音频输出
-- **音量调节**: 展开控制按钮后可上下拖动滑块调节音量（0%~300%）
-- **AI 降噪**: 点击「AI」按钮开启/关闭降噪（默认开启），开启后绿色高亮，消除环境噪音仅保留人声
-
-### 6. 屏幕共享
-
-1. 点击「共享屏幕」按钮
-2. 选择要共享的窗口或屏幕
-3. 其他成员可以看到你的屏幕
-4. 点击全屏按钮可全屏查看共享内容
-
-### 7. 聊天功能
-
-- 在聊天面板输入文字发送消息
-- 点击图片/视频按钮发送媒体文件
-- 支持发送图片和视频文件
-- 点击「仅显示聊天」按钮可进入聊天全屏模式（桌面端隐藏侧栏和主内容区，移动端聊天面板扩展为全屏）
-- 聊天全屏模式下点击「←」按钮返回正常模式
-
-## 注意事项
-
-- 首次使用时浏览器会请求麦克风和屏幕共享权限，请允许
-- 屏幕共享功能需要 HTTPS 环境（localhost 除外）
-- 建议使用现代浏览器（Chrome、Firefox、Edge）
-- 外网访问需要确保端口 6789 已开放
-- AI 降噪依赖 Chrome 内置的 RNNoise 神经网络引擎，其他浏览器可能不支持或效果不同
-
-## 外网访问配置
-
-如需外网访问，请确保：
-
-1. 路由器已将端口 6789 映射到内网服务器（如 `192.168.8.20:6789`）
-2. 服务器防火墙已开放 6789 端口
-3. SSL 证书已正确配置
-
-## TURN 服务器配置
-
-项目包含 TURN 服务器配置文件 (`turnserver.conf`)，用于 NAT 穿透和媒体中继。
+**TURN 服务器**（需自建，用于 NAT 穿透）：
+- 推荐 [coturn](https://github.com/coturn/coturn)
+- 或使用商业服务如 [Metered](https://www.metered.ca/tools/openrelay/)
 
 ## 项目结构
 
 ```
 meeting-room/
-├── server.js          # 后端服务器（HTTPS + Socket.io）
-├── package.json       # 项目配置
-├── turnserver.conf    # TURN 服务器配置
+├── server.js              # 后端（HTTPS + Socket.io）
+├── config.json            # 本地配置（gitignore）
+├── config_example.json    # 配置模板
 ├── public/
-│   ├── index.html     # 前端页面
-│   ├── style.css      # 样式文件
-│   └── app.js         # 前端逻辑（WebRTC、音量滑块、AI降噪）
-└── README.md
+│   ├── index.html         # 页面结构
+│   ├── style.css          # 样式
+│   └── app.js             # 前端逻辑（WebRTC）
+├── turnserver.conf        # TURN 服务器配置示例
+└── package.json
 ```
 
-## 依赖说明
+## 外网访问
 
-- **express** - Web 服务器框架
-- **socket.io** - 实时双向通信
-- **cors** - 跨域资源共享
-- **multer** - 文件上传处理
-- **nodemon** - 开发模式自动重启
+1. 确保路由器已将端口映射到服务器内网 IP
+2. 确保服务器防火墙已开放端口
+3. 需要 HTTPS（WebRTC 要求安全上下文）
+4. 移动端需要 HTTPS 才能使用麦克风
 
 ## License
 

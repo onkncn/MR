@@ -5,23 +5,34 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+// 加载配置
+const configPath = path.join(__dirname, 'config.json');
+if (!fs.existsSync(configPath)) {
+  console.error('❌ config.json 不存在，请复制 config_example.json 并填写配置：');
+  console.error('   cp config_example.json config.json');
+  process.exit(1);
+}
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
 const app = express();
 
 const options = {
-  key: fs.readFileSync(path.join(__dirname, '../.ssl/key.pem')),
-  cert: fs.readFileSync(path.join(__dirname, '../.ssl/cert.pem'))
+  key: fs.readFileSync(path.resolve(__dirname, config.ssl.key)),
+  cert: fs.readFileSync(path.resolve(__dirname, config.ssl.cert))
 };
 
 const server = https.createServer(options, app);
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+  cors: config.cors
 });
 
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// 提供 ICE 服务器配置给客户端
+app.get('/api/config', (req, res) => {
+  res.json({ iceServers: config.iceServers });
+});
 
 const channels = new Map();
 // 跟踪每个用户的屏幕共享状态 { channelId -> Map<userId, boolean> }
@@ -37,7 +48,6 @@ io.on('connection', (socket) => {
       name: ch.name,
       users: Array.from(ch.users)
     })));
-    // 登录时不需要屏幕共享状态（用户还没加入任何频道）
   });
 
   socket.on('create-channel', (channelName) => {
@@ -186,6 +196,7 @@ io.on('connection', (socket) => {
       });
       
       channels.delete(channelId);
+      screenShareStatus.delete(channelId);
       io.emit('channel-deleted', channelId);
     }
   });
@@ -228,7 +239,9 @@ function generateRoomId() {
 }
 
 const os = require('os');
-const PORT = process.env.PORT || 6789;
+const PORT = config.port || 6789;
+const HOST = config.host || '0.0.0.0';
+const DOMAIN = config.domain || 'localhost';
 
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -242,7 +255,7 @@ function getLocalIP() {
   return 'localhost';
 }
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, HOST, () => {
   const localIP = getLocalIP();
   console.log('========================================');
   console.log('语音频道服务器已启动！');
@@ -250,16 +263,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log(`本地访问: https://localhost:${PORT}`);
   console.log(`局域网访问: https://${localIP}:${PORT}`);
-  console.log(`外网访问: https://onkn.cn:${PORT}`);
+  console.log(`外网访问: https://${DOMAIN}:${PORT}`);
   console.log('');
-  console.log('【外网访问配置检查】');
-  console.log(`1. 确保路由器已将端口 ${PORT} 映射到 192.168.8.20:${PORT}`);
-  console.log(`2. 确保服务器防火墙已开放 ${PORT} 端口`);
-  console.log('');
-  console.log('【功能】');
-  console.log('✓ 语音通话');
-  console.log('✓ 屏幕共享（支持全屏）');
-  console.log('✓ 频道创建和重命名');
-  console.log('✓ 移动端支持');
   console.log('========================================');
 });
