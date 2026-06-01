@@ -651,6 +651,38 @@ function login() {
 
 function logout() {
     leaveChannel();
+    
+    // 清理 Web Audio API 资源
+    if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
+    if (micGainDest) { try { micGainDest.disconnect(); } catch(e) {} micGainDest = null; }
+    if (audioMixDest) { try { audioMixDest.disconnect(); } catch(e) {} audioMixDest = null; }
+    if (audioContext && audioContext.state !== 'closed') { audioContext.close().catch(() => {}); audioContext = null; }
+    
+    // 清理媒体状态
+    audioTrack = null;
+    localStream = null;
+    screenStream = null;
+    screenSharing = false;
+    audioEnabled = false;
+    denoiseEnabled = true;
+    viewingScreenOf = null;
+    currentScreenSharer = null;
+    userName = null;
+    
+    // 清理聊天状态
+    chatMessagesList = [];
+    pendingImages = [];
+    if (chatMessages) chatMessages.innerHTML = '';
+    clearImagePreview();
+    
+    // 重置按钮
+    toggleAudioBtn.classList.remove('mic-active');
+    toggleVideoBtn.classList.remove('speaker-active');
+    toggleScreenShareBtn.classList.remove('screen-active');
+    if (toggleDenoiseBtn) toggleDenoiseBtn.classList.add('active');
+    updateVideoButton();
+    
+    // 切换到登录页
     room.classList.add('hidden');
     lobby.classList.remove('hidden');
     userNameInput.value = '';
