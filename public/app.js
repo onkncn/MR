@@ -1257,28 +1257,27 @@ async function toggleAudio() {
             localStream.addTrack(sendTrack);
             console.log('[iOS] sendTrack added to localStream, localStream tracks:', localStream.getTracks().map(t => t.kind + ':' + t.id));
             
-            // 填充所有已有的 PeerConnection 的音频 transceiver
+            // 填充所有已有的 PeerConnection 的音频
             peerConnections.forEach((pc, peerId) => {
-                const audioTransceiver = pc.getTransceivers().find(t => 
-                    t.receiver?.track?.kind === 'audio' || 
-                    (t.sender && t.sender.track === null && t.receiver?.kind === 'audio')
-                );
-                console.log('[iOS] peer:', peerId, 'transceiver found:', !!audioTransceiver, 'transceivers:', pc.getTransceivers().map(t => t.direction + ':' + t.receiver?.kind));
-                if (audioTransceiver) {
-                    audioTransceiver.sender.replaceTrack(sendTrack).then(() => {
-                        console.log('[iOS] replaceTrack 成功, sender track:', audioTransceiver.sender.track?.id, 'direction:', audioTransceiver.direction);
-                        if (audioTransceiver.direction === 'recvonly') {
-                            audioTransceiver.direction = 'sendrecv';
-                        }
+                const senders = pc.getSenders();
+                const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.transport));
+                console.log('[Audio] peer:', peerId, 'audioSender:', !!audioSender, 'track:', audioSender?.track?.kind || 'null');
+                
+                if (audioSender) {
+                    audioSender.replaceTrack(sendTrack).then(() => {
+                        console.log('[Audio] replaceTrack 成功');
                         renegotiate(pc, peerId);
                     }).catch(err => {
-                        console.error('[iOS] replaceTrack 失败:', err);
-                        try { pc.addTrack(sendTrack, localStream); renegotiate(pc, peerId); } catch(e) {}
+                        console.error('[Audio] replaceTrack 失败:', err);
                     });
                 } else {
-                    console.log('[iOS] 无 audio transceiver, 尝试 addTrack');
-                    pc.addTrack(sendTrack, localStream);
-                    renegotiate(pc, peerId);
+                    try {
+                        pc.addTrack(sendTrack, localStream);
+                        console.log('[Audio] addTrack 成功');
+                        renegotiate(pc, peerId);
+                    } catch (err) {
+                        console.error('[Audio] addTrack 失败:', err);
+                    }
                 }
             });
             
