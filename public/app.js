@@ -2170,6 +2170,10 @@ socket.on('channel-created', (channel) => {
     }
 });
 
+socket.on('join-error', (msg) => {
+    alert('加入频道失败: ' + msg);
+});
+
 socket.on('channel-updated', (channel) => {
     const idx = channelList.findIndex(ch => ch.id === channel.id);
     if (idx >= 0) {
