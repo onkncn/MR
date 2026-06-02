@@ -1260,7 +1260,8 @@ async function toggleAudio() {
             // 填充所有已有的 PeerConnection 的音频
             peerConnections.forEach((pc, peerId) => {
                 const senders = pc.getSenders();
-                const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.transport));
+                const audioSender = senders.find(s => s.track?.kind === 'audio') ||
+                                   senders.find(s => s.track === null && s.receiver?.kind === 'audio');
                 console.log('[Audio] peer:', peerId, 'audioSender:', !!audioSender, 'track:', audioSender?.track?.kind || 'null');
                 
                 if (audioSender) {
