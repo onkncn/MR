@@ -750,6 +750,7 @@ chatInput.addEventListener('keydown', (e) => {
         sendChatMessage();
     }
 });
+chatInput.addEventListener('input', handleTyping);
 chatInput.addEventListener('paste', handleChatPaste);
 chatFileBtn.addEventListener('click', () => {
     if (!currentChannel) {
@@ -759,6 +760,30 @@ chatFileBtn.addEventListener('click', () => {
     chatFileInput.click();
 });
 chatFileInput.addEventListener('change', handleChatFile);
+
+// 新增按钮事件
+const emojiBtn = document.getElementById('emojiBtn');
+const voiceMsgBtn = document.getElementById('voiceMsgBtn');
+const docFileBtn = document.getElementById('docFileBtn');
+const docFileInput = document.getElementById('docFileInput');
+
+if (emojiBtn) emojiBtn.addEventListener('click', () => showEmojiPicker(chatInput));
+if (voiceMsgBtn) voiceMsgBtn.addEventListener('click', () => {
+    if (!currentChannel) { alert('请先加入频道'); return; }
+    toggleVoiceMessage();
+});
+if (docFileBtn) docFileBtn.addEventListener('click', () => {
+    if (!currentChannel) { alert('请先加入频道'); return; }
+    docFileInput.click();
+});
+if (docFileInput) docFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) sendFileMessage(file);
+    docFileInput.value = '';
+});
+
+// 加入频道时清除未读
+const origJoinChannel = typeof joinChannel === 'function' ? joinChannel : null;
 
 function initResizeHandles() {
     const sidebarHandle = document.getElementById('sidebarResizeHandle');
@@ -985,6 +1010,7 @@ function updateChannelList() {
         const isActive = currentChannel && currentChannel.id === channel.id;
         const item = document.createElement('div');
         item.className = 'channel-item' + (isActive ? ' active' : '');
+        item.dataset.channelId = channel.id;
         
         const nameRow = document.createElement('div');
         nameRow.className = 'channel-item-row';
@@ -999,6 +1025,24 @@ function updateChannelList() {
         nameRow.querySelector('.channel-item-name').textContent = channel.name;
         nameRow.querySelector('.user-count').textContent = channel.users ? channel.users.length : 0;
         item.appendChild(nameRow);
+        
+        // 倒计时/人时信息
+        if (channel.pendingDelete) {
+            const infoRow = document.createElement('div');
+            infoRow.className = 'channel-delete-info';
+            const remainMs = channel.deleteAt ? channel.deleteAt - Date.now() : 0;
+            const countdown = formatCountdown(remainMs);
+            infoRow.textContent = `🗑 ${countdown}后自动删除`;
+            infoRow.style.cssText = 'padding: 2px 12px 4px 32px; font-size: 11px; color: #ed4245;';
+            item.appendChild(infoRow);
+            startCountdownRefresh();
+        } else if (channel.personTime > 60) {
+            const infoRow = document.createElement('div');
+            infoRow.className = 'channel-person-time';
+            infoRow.textContent = `⏱ 累计在线 ${formatPersonTime(channel.personTime)}`;
+            infoRow.style.cssText = 'padding: 2px 12px 4px 32px; font-size: 11px; color: #72767d;';
+            item.appendChild(infoRow);
+        }
         
         // 活跃频道下显示参与者列表
         if (isActive && channel.users && channel.users.length > 0) {
@@ -1386,10 +1430,15 @@ async function joinChannel(channel) {
         currentChannel = channel;
         channelOwner = channel.owner || null;
         
+        // 清除未读
+        chatUnread.delete(channel.id);
+        messageCache = [];
+        updateUnreadBadge();
+        
         socket.emit('join-channel', { channelId: channel.id, password: '' });
         updateAudioButtons();
         updateParticipantsDisplay();
-        updateInviteButton();
+
         
         // 如果上次麦克风是开启的，自动尝试开麦（会触发权限请求）
         const savedMicState = (() => {
@@ -1484,6 +1533,7 @@ async function toggleAudio() {
     if (!audioTrack) {
         // 首次开麦，请求麦克风权限
         try {
+            console.log('[Audio] 请求麦克风权限...');
             const audioConstraints = {
                 echoCancellation: true,
                 noiseSuppression: denoiseEnabled,
@@ -1500,6 +1550,7 @@ async function toggleAudio() {
             });
             
             audioTrack = micStream.getAudioTracks()[0];
+            console.log('[Audio] 麦克风获取成功:', audioTrack.id, 'enabled:', audioTrack.enabled, 'readyState:', audioTrack.readyState, 'muted:', audioTrack.muted);
             
             let sendTrack; // 实际发送给 PeerConnection 的音轨
             
@@ -1538,32 +1589,34 @@ async function toggleAudio() {
             localStream.addTrack(sendTrack);
             console.log('[iOS] sendTrack added to localStream, localStream tracks:', localStream.getTracks().map(t => t.kind + ':' + t.id));
             
-            // 填充所有已有的 PeerConnection 的音频 transceiver
+            // 填充所有已有的 PeerConnection 的音频
             peerConnections.forEach((pc, peerId) => {
-                const audioTransceiver = pc.getTransceivers().find(t => 
-                    t.receiver?.track?.kind === 'audio' || 
-                    (t.sender && t.sender.track === null && t.receiver?.kind === 'audio')
-                );
-                console.log('[iOS] peer:', peerId, 'transceiver found:', !!audioTransceiver, 'transceivers:', pc.getTransceivers().map(t => t.direction + ':' + t.receiver?.kind));
-                if (audioTransceiver) {
-                    audioTransceiver.sender.replaceTrack(sendTrack).then(() => {
-                        console.log('[iOS] replaceTrack 成功, sender track:', audioTransceiver.sender.track?.id, 'direction:', audioTransceiver.direction);
-                        if (audioTransceiver.direction === 'recvonly') {
-                            audioTransceiver.direction = 'sendrecv';
-                        }
+                const senders = pc.getSenders();
+                const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.transport));
+                console.log('[Audio] peer:', peerId, 'audioSender:', !!audioSender, 'track:', audioSender?.track?.kind || 'null');
+                
+                if (audioSender) {
+                    // 已有音频 sender（含 placeholder），直接替换 track
+                    audioSender.replaceTrack(sendTrack).then(() => {
+                        console.log('[Audio] replaceTrack 成功');
                         renegotiate(pc, peerId);
                     }).catch(err => {
-                        console.error('[iOS] replaceTrack 失败:', err);
-                        try { pc.addTrack(sendTrack, localStream); renegotiate(pc, peerId); } catch(e) {}
+                        console.error('[Audio] replaceTrack 失败:', err);
                     });
                 } else {
-                    console.log('[iOS] 无 audio transceiver, 尝试 addTrack');
-                    pc.addTrack(sendTrack, localStream);
-                    renegotiate(pc, peerId);
+                    // 无音频 sender，添加新 track
+                    try {
+                        pc.addTrack(sendTrack, localStream);
+                        console.log('[Audio] addTrack 成功');
+                        renegotiate(pc, peerId);
+                    } catch (err) {
+                        console.error('[Audio] addTrack 失败:', err);
+                    }
                 }
             });
             
             audioEnabled = true;
+            console.log('[Audio] audioEnabled=true, peerConnections:', peerConnections.size, 'localStream tracks:', localStream.getTracks().map(t => t.kind + ':' + t.enabled));
         } catch (err) {
             console.error('获取麦克风失败:', err);
             alert('无法访问麦克风，请允许权限\n\n' + (err.name || err.message || err));
@@ -2197,6 +2250,55 @@ socket.on('channel-deleted', (channelId) => {
     }
 });
 
+// 频道被删除（当前用户在频道内被踢出）
+socket.on('channel-removed', (data) => {
+    alert('频道已被房主删除');
+    leaveChannel();
+});
+
+// 频道自动删除倒计时取消（有人重新加入）
+socket.on('channel-delete-cancelled', (channelId) => {
+    const ch = channelList.find(c => c.id === channelId);
+    if (ch) {
+        ch.pendingDelete = false;
+        ch.deleteAt = null;
+        updateChannelList();
+    }
+});
+
+// 倒计时刷新定时器
+let countdownTimer = null;
+function startCountdownRefresh() {
+    if (countdownTimer) return;
+    countdownTimer = setInterval(() => {
+        if (channelList.some(ch => ch.pendingDelete)) {
+            updateChannelList();
+        } else {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
+    }, 10000); // 每 10 秒刷新
+}
+
+function formatCountdown(ms) {
+    if (ms <= 0) return '即将删除';
+    const mins = Math.round(ms / 60000);
+    if (mins < 1) return '不到1分钟';
+    if (mins < 60) return mins + '分钟';
+    const hours = Math.floor(mins / 60);
+    const remainMins = mins % 60;
+    return hours + '小时' + (remainMins > 0 ? remainMins + '分钟' : '');
+}
+
+function formatPersonTime(seconds) {
+    if (!seconds || seconds < 60) return '';
+    const mins = Math.round(seconds / 60);
+    if (mins < 60) return mins + '分钟';
+    const hours = Math.floor(mins / 60);
+    const remainMins = mins % 60;
+    return hours + '时' + (remainMins > 0 ? remainMins + '分' : '');
+}
+
 socket.on('user-connected', async (remoteUserName) => {
     console.log('用户加入:', remoteUserName);
     participants.set(remoteUserName, { audioEnabled: true, screenSharing: false });
@@ -2346,44 +2448,486 @@ socket.on('screen-share-status', (data) => {
     }
 });
 
-socket.on('chat-message', (data) => {
-    addChatMessage(data);
+// ====== 聊天增强 ======
+const chatUnread = new Map(); // channelId -> count
+let typingTimer = null;
+const EMOJI_LIST = ['👍','❤️','😂','😮','😢','🎉','🔥','👏','🤔','💯','✅','❌','👀','🙏','💪','🎯','⭐','🚀','💡','🎵'];
+const REACTION_EMOJI = ['👍','❤️','😂','😮','😢','🎉','🔥','👏','🤔','💯'];
+let messageCache = []; // 当前频道消息缓存
+
+// 新消息提示音（使用 AudioContext 生成简单提示音）
+function playNotifySound() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        gain.gain.value = 0.1;
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+}
+
+// 历史消息加载
+socket.on('chat-history', (history) => {
+    messageCache = history || [];
+    if (chatMessages) chatMessages.innerHTML = '';
+    messageCache.forEach(msg => addChatMessage(msg, false));
+    scrollToBottom();
 });
 
+socket.on('chat-message', (data) => {
+    // 服务端已回传，用 id 去重
+    if (data.id && messageCache.find(m => m.id === data.id)) return;
+    messageCache.push(data);
+    addChatMessage(data);
+    // 未读消息提示
+    if (currentChannel && (!chatPanel || chatPanel.classList.contains('collapsed'))) {
+        const count = chatUnread.get(currentChannel.id) || 0;
+        chatUnread.set(currentChannel.id, count + 1);
+        updateUnreadBadge();
+        playNotifySound();
+    } else if (document.hidden) {
+        playNotifySound();
+    }
+    scrollToBottom();
+});
+
+// 消息撤回
+socket.on('message-deleted', (msgId) => {
+    messageCache = messageCache.filter(m => m.id !== msgId);
+    const el = chatMessages?.querySelector(`[data-msg-id="${msgId}"]`);
+    if (el) el.remove();
+});
+
+// 输入中指示器
+socket.on('typing-users', (users) => {
+    const indicator = document.getElementById('typingIndicator');
+    if (!indicator) return;
+    const filtered = users.filter(u => u !== userName);
+    if (filtered.length === 0) {
+        indicator.classList.add('hidden');
+    } else {
+        indicator.classList.remove('hidden');
+        indicator.textContent = filtered.length === 1
+            ? `${filtered[0]} 正在输入...`
+            : `${filtered.join('、')} 正在输入...`;
+    }
+});
+
+// 表情回复更新
+socket.on('reaction-updated', (data) => {
+    const el = chatMessages?.querySelector(`[data-msg-id="${data.msgId}"]`);
+    if (!el) return;
+    const msg = messageCache.find(m => m.id === data.msgId);
+    if (msg) msg.reactions = data.reactions;
+    const container = el.querySelector('.chat-reactions');
+    if (container) {
+        container.innerHTML = '';
+        renderReactions(container, data.msgId, data.reactions);
+    }
+});
+
+// 未读角标更新
+function updateUnreadBadge() {
+    document.querySelectorAll('.channel-item').forEach(item => {
+        const chId = item.dataset.channelId;
+        if (!chId) return;
+        const count = chatUnread.get(chId) || 0;
+        let badge = item.querySelector('.unread-badge');
+        if (count > 0) {
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'unread-badge';
+                item.querySelector('.channel-item-row')?.appendChild(badge);
+            }
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = '';
+        } else if (badge) {
+            badge.style.display = 'none';
+        }
+    });
+}
+
+// 自动滚动
+function scrollToBottom() {
+    if (chatMessages) {
+        requestAnimationFrame(() => {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+    }
+}
+
+// Markdown 渲染
+function renderMarkdown(text) {
+    let html = text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        // 代码块
+        .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
+        // 行内代码
+        .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+        // 粗体
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // 斜体
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        // 删除线
+        .replace(/~~(.+?)~~/g, '<del>$1</del>')
+        // @ 提及
+        .replace(/@(\S+)/g, '<span class="mention">@$1</span>')
+        // 链接
+        .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" class="chat-link">$1</a>')
+        // 换行
+        .replace(/\n/g, '<br>');
+    return html;
+}
+
+// 链接预览检测
+function extractLinks(text) {
+    const urlRegex = /(https?:\/\/[^\s<]+)/g;
+    return (text.match(urlRegex) || []).slice(0, 3); // 最多3个预览
+}
+
+// 渲染表情回复
+function renderReactions(container, msgId, reactions) {
+    if (!reactions) return;
+    for (const [emoji, users] of Object.entries(reactions)) {
+        const btn = document.createElement('span');
+        btn.className = 'reaction-badge' + (users.includes(userName) ? ' self' : '');
+        btn.textContent = `${emoji} ${users.length}`;
+        btn.title = users.join(', ');
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            socket.emit('add-reaction', { msgId, emoji });
+        };
+        container.appendChild(btn);
+    }
+    // 添加 reaction 按钮
+    const addBtn = document.createElement('span');
+    addBtn.className = 'reaction-add';
+    addBtn.textContent = '+';
+    addBtn.onclick = (e) => {
+        e.stopPropagation();
+        showReactionPicker(msgId, addBtn);
+    };
+    container.appendChild(addBtn);
+}
+
+// 表情选择器弹窗
+function showReactionPicker(msgId, anchor) {
+    const existing = document.querySelector('.reaction-picker');
+    if (existing) existing.remove();
+    
+    const picker = document.createElement('div');
+    picker.className = 'reaction-picker';
+    REACTION_EMOJI.forEach(emoji => {
+        const btn = document.createElement('span');
+        btn.className = 'reaction-picker-item';
+        btn.textContent = emoji;
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            socket.emit('add-reaction', { msgId, emoji });
+            picker.remove();
+        };
+        picker.appendChild(btn);
+    });
+    
+    const rect = anchor.getBoundingClientRect();
+    picker.style.left = rect.left + 'px';
+    picker.style.top = (rect.top - 40) + 'px';
+    document.body.appendChild(picker);
+    
+    setTimeout(() => {
+        document.addEventListener('click', () => picker.remove(), { once: true });
+    }, 10);
+}
+
+// Emoji 选择器
+function showEmojiPicker(input) {
+    const existing = document.querySelector('.emoji-picker');
+    if (existing) { existing.remove(); return; }
+    
+    const picker = document.createElement('div');
+    picker.className = 'emoji-picker';
+    EMOJI_LIST.forEach(emoji => {
+        const btn = document.createElement('span');
+        btn.className = 'emoji-item';
+        btn.textContent = emoji;
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            input.value += emoji;
+            input.focus();
+            picker.remove();
+        };
+        picker.appendChild(btn);
+    });
+    
+    const rect = input.getBoundingClientRect();
+    picker.style.position = 'fixed';
+    picker.style.left = rect.left + 'px';
+    picker.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+    document.body.appendChild(picker);
+    
+    setTimeout(() => {
+        document.addEventListener('click', () => picker.remove(), { once: true });
+    }, 10);
+}
+
+// 语音消息
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+function toggleVoiceMessage() {
+    if (isRecording) {
+        stopRecording();
+    } else {
+        startRecording();
+    }
+}
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        audioChunks = [];
+        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onload = () => {
+                socket.emit('chat-message', {
+                    user: userName,
+                    message: reader.result,
+                    time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+                    type: 'voice',
+                    duration: Math.round((Date.now() - recordStartTime) / 1000)
+                });
+            };
+            reader.readAsDataURL(blob);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        recordStartTime = Date.now();
+        const btn = document.getElementById('voiceMsgBtn');
+        if (btn) btn.classList.add('recording');
+    } catch(e) {
+        alert('无法访问麦克风');
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+    }
+    isRecording = false;
+    const btn = document.getElementById('voiceMsgBtn');
+    if (btn) btn.classList.remove('recording');
+}
+
+let recordStartTime = 0;
+
+// 文件分享
+function sendFileMessage(file) {
+    if (file.size > 20 * 1024 * 1024) { alert('文件不能超过20MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+        socket.emit('chat-message', {
+            user: userName,
+            message: reader.result,
+            time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            type: 'file',
+            fileName: file.name,
+            fileSize: file.size
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+// 输入中状态
+function handleTyping() {
+    if (!currentChannel) return;
+    socket.emit('typing-status', { typing: true });
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+        socket.emit('typing-status', { typing: false });
+    }, 2000);
+}
+
+// 发送消息（去掉重复添加，服务端回传）
 function sendChatMessage() {
     const message = chatInput.value.trim();
-    if (!currentChannel) {
-        alert('请先加入频道');
-        return;
-    }
+    if (!currentChannel) { alert('请先加入频道'); return; }
     if (!message && pendingImages.length === 0) return;
     
     if (message) {
-        const msgData = {
+        socket.emit('chat-message', {
             user: userName,
             message: message,
             time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
             type: 'text'
-        };
-        socket.emit('chat-message', msgData);
-        addChatMessage(msgData);
+        });
         chatInput.value = '';
+        socket.emit('typing-status', { typing: false });
     }
     
     pendingImages.forEach(img => {
-        const msgData = {
+        socket.emit('chat-message', {
             user: userName,
             message: img.dataUrl,
             time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
             type: img.type || 'image',
             fileName: img.fileName
-        };
-        socket.emit('chat-message', msgData);
-        addChatMessage(msgData);
+        });
     });
     
     pendingImages = [];
     clearImagePreview();
+}
+
+// 添加消息到 DOM（增强版）
+function addChatMessage(data, animate = true) {
+    if (!chatMessages) return;
+    // 移除空状态提示
+    const empty = chatMessages.querySelector('.chat-empty');
+    if (empty) empty.remove();
+    
+    const isSelf = data.user === userName;
+    const msgEl = document.createElement('div');
+    msgEl.className = 'chat-message ' + (isSelf ? 'self' : 'other');
+    if (animate) msgEl.classList.add('msg-enter');
+    msgEl.dataset.msgId = data.id || '';
+    
+    const headerEl = document.createElement('div');
+    headerEl.className = 'chat-message-header';
+    const userSpan = document.createElement('span');
+    userSpan.className = 'chat-message-user';
+    userSpan.textContent = data.user;
+    if (!isSelf) userSpan.style.color = getUserColor(data.user);
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'chat-message-time';
+    timeSpan.textContent = data.time;
+    headerEl.appendChild(userSpan);
+    headerEl.appendChild(timeSpan);
+    msgEl.appendChild(headerEl);
+    
+    const contentEl = document.createElement('div');
+    contentEl.className = 'chat-message-content';
+    
+    if (data.type === 'image') {
+        const img = document.createElement('img');
+        img.src = data.message;
+        img.className = 'chat-message-image';
+        img.onclick = () => openImageModal(data.message);
+        img.loading = 'lazy';
+        contentEl.appendChild(img);
+    } else if (data.type === 'video') {
+        const video = document.createElement('video');
+        video.src = data.message;
+        video.className = 'chat-message-video';
+        video.controls = true;
+        contentEl.appendChild(video);
+    } else if (data.type === 'voice') {
+        const voiceEl = document.createElement('div');
+        voiceEl.className = 'voice-message';
+        voiceEl.innerHTML = `
+            <button class="voice-play-btn">▶</button>
+            <div class="voice-wave"></div>
+            <span class="voice-duration">${data.duration || 0}s</span>
+        `;
+        const audio = new Audio(data.message);
+        const playBtn = voiceEl.querySelector('.voice-play-btn');
+        playBtn.onclick = () => {
+            if (audio.paused) { audio.play(); playBtn.textContent = '⏸'; }
+            else { audio.pause(); playBtn.textContent = '▶'; }
+        };
+        audio.onended = () => { playBtn.textContent = '▶'; };
+        contentEl.appendChild(voiceEl);
+    } else if (data.type === 'file') {
+        const fileCard = document.createElement('div');
+        fileCard.className = 'file-card';
+        const sizeStr = data.fileSize > 1024*1024 
+            ? (data.fileSize/1024/1024).toFixed(1) + 'MB'
+            : (data.fileSize/1024).toFixed(0) + 'KB';
+        fileCard.innerHTML = `
+            <div class="file-icon">📄</div>
+            <div class="file-info">
+                <div class="file-name">${data.fileName || '文件'}</div>
+                <div class="file-size">${sizeStr}</div>
+            </div>
+        `;
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'file-download-btn';
+        downloadBtn.textContent = '下载';
+        downloadBtn.onclick = (e) => {
+            e.stopPropagation();
+            const a = document.createElement('a');
+            a.href = data.message;
+            a.download = data.fileName || 'file';
+            a.click();
+        };
+        fileCard.appendChild(downloadBtn);
+        contentEl.appendChild(fileCard);
+    } else {
+        contentEl.innerHTML = renderMarkdown(data.message);
+        // 链接预览
+        const links = extractLinks(data.message);
+        if (links.length > 0) {
+            links.forEach(url => {
+                const preview = document.createElement('div');
+                preview.className = 'link-preview';
+                try {
+                    const u = new URL(url);
+                    preview.innerHTML = `<a href="${url}" target="_blank" rel="noopener">${u.hostname}${u.pathname.substring(0,30)}</a>`;
+                } catch(e) {
+                    preview.innerHTML = `<a href="${url}" target="_blank" rel="noopener">${url.substring(0,50)}</a>`;
+                }
+                contentEl.appendChild(preview);
+            });
+        }
+    }
+    msgEl.appendChild(contentEl);
+    
+    // 表情回复区域
+    const reactionsEl = document.createElement('div');
+    reactionsEl.className = 'chat-reactions';
+    if (data.reactions && Object.keys(data.reactions).length > 0) {
+        renderReactions(reactionsEl, data.id, data.reactions);
+    }
+    msgEl.appendChild(reactionsEl);
+    
+    // 自己的消息长按/右键可撤回
+    if (isSelf && data.id) {
+        msgEl.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            if (confirm('撤回这条消息？')) {
+                socket.emit('delete-message', data.id);
+            }
+        });
+        let lpTimer = null;
+        msgEl.addEventListener('touchstart', () => {
+            lpTimer = setTimeout(() => {
+                if (confirm('撤回这条消息？')) {
+                    socket.emit('delete-message', data.id);
+                }
+            }, 600);
+        });
+        msgEl.addEventListener('touchend', () => clearTimeout(lpTimer));
+        msgEl.addEventListener('touchmove', () => clearTimeout(lpTimer));
+    }
+    
+    chatMessages.appendChild(msgEl);
+}
+
+// 用户颜色（固定分配）
+function getUserColor(user) {
+    const colors = ['#f04747','#faa61a','#43b581','#593695','#7289da','#e91e63','#00bcd4','#ff9800'];
+    let hash = 0;
+    for (let i = 0; i < user.length; i++) hash = user.charCodeAt(i) + ((hash << 5) - hash);
+    return colors[Math.abs(hash) % colors.length];
 }
 
 function handleChatPaste(e) {
@@ -2444,76 +2988,6 @@ function handleChatFile() {
     chatFileInput.value = '';
 }
 
-function getUserColor(name) {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const colors = [
-        '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c',
-        '#3498db', '#9b59b6', '#e91e63', '#00bcd4', '#8bc34a',
-        '#ff9800', '#795548', '#607d8b', '#673ab7', '#4caf50'
-    ];
-    return colors[Math.abs(hash) % colors.length];
-}
-
-function addChatMessage(data) {
-    chatMessagesList.push(data);
-    if (chatMessagesList.length > 500) chatMessagesList.shift();
-    
-    const emptyMsg = chatMessages.querySelector('.chat-empty');
-    if (emptyMsg) {
-        emptyMsg.remove();
-    }
-    
-    const msgEl = document.createElement('div');
-    const isSelf = data.user === userName;
-    msgEl.className = 'chat-message ' + (isSelf ? 'self' : 'other');
-    
-    const headerEl = document.createElement('div');
-    headerEl.className = 'chat-message-header';
-    const userSpan = document.createElement('span');
-    userSpan.className = 'chat-message-user';
-    userSpan.textContent = data.user;
-    if (!isSelf) {
-        userSpan.style.color = getUserColor(data.user);
-    }
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'chat-message-time';
-    timeSpan.textContent = data.time;
-    headerEl.appendChild(userSpan);
-    headerEl.appendChild(timeSpan);
-    msgEl.appendChild(headerEl);
-    
-    const contentEl = document.createElement('div');
-    contentEl.className = 'chat-message-content';
-    
-    if (!isSelf) {
-        contentEl.style.borderLeftColor = getUserColor(data.user);
-        contentEl.style.borderLeftWidth = '3px';
-    }
-    
-    if (data.type === 'image') {
-        const img = document.createElement('img');
-        img.src = data.message;
-        img.className = 'chat-message-image';
-        img.onclick = () => openImageModal(data.message);
-        contentEl.appendChild(img);
-    } else if (data.type === 'video') {
-        const video = document.createElement('video');
-        video.src = data.message;
-        video.className = 'chat-message-video';
-        video.controls = true;
-        contentEl.appendChild(video);
-    } else {
-        contentEl.textContent = data.message;
-    }
-    
-    msgEl.appendChild(contentEl);
-    chatMessages.appendChild(msgEl);
-    
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
 
 function addImagePreview(imageData) {
     chatPreviewArea.classList.remove('hidden');

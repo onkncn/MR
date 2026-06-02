@@ -29,7 +29,7 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => { res.set('Cache-Control', 'no-store'); } }));
 
 // 提供 ICE 服务器配置给客户端
 app.get('/api/config', (req, res) => {
@@ -53,7 +53,8 @@ function loadChannels() {
           users: new Set(),
           password: ch.password || null,
           owner: ch.owner || null,
-          createdAt: ch.createdAt || Date.now()
+          createdAt: ch.createdAt || Date.now(),
+          personTime: ch.personTime || 0
         });
       }
       return m;
@@ -65,7 +66,7 @@ function loadChannels() {
 function saveChannels() {
   const obj = {};
   channels.forEach((ch, id) => {
-    obj[id] = { name: ch.name, password: ch.password, owner: ch.owner, createdAt: ch.createdAt };
+    obj[id] = { name: ch.name, password: ch.password, owner: ch.owner, createdAt: ch.createdAt, personTime: ch.personTime || 0 };
   });
   fs.writeFileSync(CHANNELS_FILE, JSON.stringify(obj, null, 2));
 }
@@ -74,6 +75,35 @@ const channels = loadChannels();
 const screenShareStatus = new Map();
 const inviteTokens = new Map(); // token -> { channelId, createdAt, maxUses, uses }
 const mutedUsers = new Map();  // channelId -> Set<userId>
+const joinTimers = new Map();  // channelId -> Map<userId, joinTimestamp>
+const deleteTimers = new Map(); // channelId -> timeout handle
+const typingUsers = new Map(); // channelId -> Map<userId, timeout>
+const MAX_MESSAGES = 200; // 每频道最多存储消息数
+
+// ====== 消息持久化 ======
+const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
+
+function loadMessages() {
+  try {
+    if (fs.existsSync(MESSAGES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf-8'));
+      const m = new Map();
+      for (const [id, msgs] of Object.entries(data)) {
+        m.set(id, msgs || []);
+      }
+      return m;
+    }
+  } catch (e) { console.error('加载消息数据失败:', e); }
+  return new Map();
+}
+
+function saveMessages() {
+  const obj = {};
+  channelMessages.forEach((msgs, id) => { obj[id] = msgs; });
+  fs.writeFileSync(MESSAGES_FILE, JSON.stringify(obj, null, 2));
+}
+
+const channelMessages = loadMessages();
 
 // ====== Socket.IO ======
 io.on('connection', (socket) => {
@@ -86,7 +116,9 @@ io.on('connection', (socket) => {
       name: ch.name,
       users: Array.from(ch.users),
       hasPassword: !!ch.password,
-      owner: ch.owner
+      owner: ch.owner,
+      personTime: ch.personTime || 0,
+      pendingDelete: deleteTimers.has(id)
     })));
   });
 
@@ -101,7 +133,8 @@ io.on('connection', (socket) => {
       users: new Set(),
       password: password || null,
       owner: socket.username,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      personTime: 0
     });
     saveChannels();
     io.emit('channel-created', {
@@ -109,7 +142,9 @@ io.on('connection', (socket) => {
       name,
       users: [],
       hasPassword: !!password,
-      owner: socket.username
+      owner: socket.username,
+      personTime: 0,
+      pendingDelete: false
     });
   });
 
@@ -130,6 +165,17 @@ io.on('connection', (socket) => {
     socket.userId = userId;
     channel.users.add(userId);
 
+    // 记录加入时间
+    if (!joinTimers.has(channelId)) joinTimers.set(channelId, new Map());
+    joinTimers.get(channelId).set(userId, Date.now());
+
+    // 取消该频道的自动删除计时器
+    if (deleteTimers.has(channelId)) {
+      clearTimeout(deleteTimers.get(channelId));
+      deleteTimers.delete(channelId);
+      io.emit('channel-delete-cancelled', channelId);
+    }
+
     console.log(`用户 ${userId} 加入频道 ${channel.name} (${channelId})`);
 
     const channelScreenStatus = screenShareStatus.get(channelId) || new Map();
@@ -149,11 +195,17 @@ io.on('connection', (socket) => {
       name: channel.name,
       users: Array.from(channel.users),
       hasPassword: !!channel.password,
-      owner: channel.owner
+      owner: channel.owner,
+      personTime: channel.personTime || 0,
+      pendingDelete: deleteTimers.has(channelId)
     });
 
     // 通知有人加入
     socket.to(channelId).emit('user-joined-notification', { user: userId, channel: channel.name });
+
+    // 发送历史消息
+    const history = channelMessages.get(channelId) || [];
+    socket.emit('chat-history', history);
   });
 
   // 生成邀请链接
@@ -217,7 +269,9 @@ io.on('connection', (socket) => {
       name: channel.name,
       users: Array.from(channel.users),
       hasPassword: !!channel.password,
-      owner: channel.owner
+      owner: channel.owner,
+      personTime: channel.personTime || 0,
+      pendingDelete: deleteTimers.has(channelId)
     });
   });
 
@@ -275,7 +329,76 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat-message', (data) => {
-    if (socket.currentChannel) socket.to(socket.currentChannel).emit('chat-message', data);
+    if (socket.currentChannel) {
+      const msgId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+      const msg = { ...data, id: msgId, reactions: {} };
+      // 持久化
+      if (!channelMessages.has(socket.currentChannel)) channelMessages.set(socket.currentChannel, []);
+      const msgs = channelMessages.get(socket.currentChannel);
+      msgs.push(msg);
+      if (msgs.length > MAX_MESSAGES) msgs.splice(0, msgs.length - MAX_MESSAGES);
+      saveMessages();
+      // 广播
+      socket.to(socket.currentChannel).emit('chat-message', msg);
+      socket.emit('chat-message', msg);
+    }
+  });
+
+  // 消息撤回
+  socket.on('delete-message', (msgId) => {
+    if (!socket.currentChannel) return;
+    const msgs = channelMessages.get(socket.currentChannel);
+    if (!msgs) return;
+    const idx = msgs.findIndex(m => m.id === msgId);
+    if (idx >= 0 && msgs[idx].user === socket.username) {
+      msgs.splice(idx, 1);
+      saveMessages();
+      io.to(socket.currentChannel).emit('message-deleted', msgId);
+    }
+  });
+
+  // 输入中指示器
+  socket.on('typing-status', (data) => {
+    if (!socket.currentChannel) return;
+    const channelId = socket.currentChannel;
+    if (!typingUsers.has(channelId)) typingUsers.set(channelId, new Map());
+    const map = typingUsers.get(channelId);
+    if (data.typing) {
+      // 清除旧计时器
+      if (map.has(socket.username)) clearTimeout(map.get(socket.username));
+      // 3秒后自动清除
+      const timer = setTimeout(() => {
+        map.delete(socket.username);
+        socket.to(channelId).emit('typing-users', Array.from(map.keys()));
+      }, 3000);
+      map.set(socket.username, timer);
+    } else {
+      if (map.has(socket.username)) clearTimeout(map.get(socket.username));
+      map.delete(socket.username);
+    }
+    socket.to(channelId).emit('typing-users', Array.from(map.keys()));
+  });
+
+  // 表情回复
+  socket.on('add-reaction', (data) => {
+    if (!socket.currentChannel) return;
+    const { msgId, emoji } = data;
+    const msgs = channelMessages.get(socket.currentChannel);
+    if (!msgs) return;
+    const msg = msgs.find(m => m.id === msgId);
+    if (!msg) return;
+    if (!msg.reactions) msg.reactions = {};
+    if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+    const users = msg.reactions[emoji];
+    const userIdx = users.indexOf(socket.username);
+    if (userIdx >= 0) {
+      users.splice(userIdx, 1); // 取消
+      if (users.length === 0) delete msg.reactions[emoji];
+    } else {
+      users.push(socket.username); // 添加
+    }
+    saveMessages();
+    io.to(socket.currentChannel).emit('reaction-updated', { msgId, reactions: msg.reactions });
   });
 
   socket.on('leave-channel', () => {
@@ -292,7 +415,9 @@ io.on('connection', (socket) => {
         name: newName,
         users: Array.from(channel.users),
         hasPassword: !!channel.password,
-        owner: channel.owner
+        owner: channel.owner,
+        personTime: channel.personTime || 0,
+        pendingDelete: deleteTimers.has(channelId)
       });
     }
   });
@@ -300,13 +425,9 @@ io.on('connection', (socket) => {
   socket.on('delete-channel', (channelId) => {
     if (channels.has(channelId)) {
       const channel = channels.get(channelId);
-      console.log(`频道 ${channel.name} (${channelId}) 被删除`);
-      io.to(channelId).emit('user-disconnected', null);
-      channels.delete(channelId);
-      screenShareStatus.delete(channelId);
-      mutedUsers.delete(channelId);
-      saveChannels();
-      io.emit('channel-deleted', channelId);
+      // 只有房主可以手动删除
+      if (channel.owner !== socket.username) return;
+      deleteChannel(channelId, channel);
     }
   });
 
@@ -315,6 +436,33 @@ io.on('connection', (socket) => {
   });
 });
 
+// 计算自动删除延迟（基于累计人时）
+function calcDeleteDelay(personTimeSeconds) {
+  const BASE_DELAY = 10 * 60 * 1000;  // 10 分钟基础
+  const MAX_DELAY = 24 * 60 * 60 * 1000; // 24 小时上限
+  const delay = BASE_DELAY + personTimeSeconds * 0.2 * 1000;
+  return Math.min(Math.round(delay), MAX_DELAY);
+}
+
+// 通用频道删除
+function deleteChannel(channelId, channel) {
+  console.log(`频道 ${channel.name} (${channelId}) 被删除`);
+  io.to(channelId).emit('channel-removed', { reason: 'deleted' });
+  channels.delete(channelId);
+  joinTimers.delete(channelId);
+  screenShareStatus.delete(channelId);
+  mutedUsers.delete(channelId);
+  channelMessages.delete(channelId);
+  typingUsers.delete(channelId);
+  if (deleteTimers.has(channelId)) {
+    clearTimeout(deleteTimers.get(channelId));
+    deleteTimers.delete(channelId);
+  }
+  saveChannels();
+  saveMessages();
+  io.emit('channel-deleted', channelId);
+}
+
 function handleLeave(socket) {
   if (socket.currentChannel && socket.userId) {
     const channelId = socket.currentChannel;
@@ -322,6 +470,16 @@ function handleLeave(socket) {
     const channel = channels.get(channelId);
 
     if (channel) {
+      // 累计人时
+      const timers = joinTimers.get(channelId);
+      if (timers && timers.has(userId)) {
+        const joinTime = timers.get(userId);
+        const duration = (Date.now() - joinTime) / 1000; // 秒
+        channel.personTime = (channel.personTime || 0) + duration;
+        timers.delete(userId);
+        saveChannels();
+      }
+
       console.log(`用户 ${userId} 离开频道 ${channel.name} (${channelId})`);
       socket.leave(channelId);
       socket.to(channelId).emit('user-disconnected', userId);
@@ -331,20 +489,35 @@ function handleLeave(socket) {
       if (screenShareStatus.has(channelId)) screenShareStatus.get(channelId).delete(userId);
 
       if (channel.users.size === 0) {
-        // 不删除持久化频道，只清空在线用户
-        if (!channel.password) {
-          channels.delete(channelId);
-          io.emit('channel-deleted', channelId);
-        }
-        screenShareStatus.delete(channelId);
-        mutedUsers.delete(channelId);
+        // 频道为空，启动自动删除计时器
+        const delay = calcDeleteDelay(channel.personTime || 0);
+        console.log(`频道 ${channel.name} 空闲，${Math.round(delay/1000/60)} 分钟后自动删除 (累计人时: ${Math.round(channel.personTime || 0)}s)`);
+        const timer = setTimeout(() => {
+          if (channels.has(channelId) && channels.get(channelId).users.size === 0) {
+            deleteChannel(channelId, channels.get(channelId));
+          }
+        }, delay);
+        deleteTimers.set(channelId, timer);
+
+        io.emit('channel-updated', {
+          id: channelId,
+          name: channel.name,
+          users: [],
+          hasPassword: !!channel.password,
+          owner: channel.owner,
+          personTime: channel.personTime || 0,
+          pendingDelete: true,
+          deleteAt: Date.now() + delay
+        });
       } else {
         io.emit('channel-updated', {
           id: channelId,
           name: channel.name,
           users: Array.from(channel.users),
           hasPassword: !!channel.password,
-          owner: channel.owner
+          owner: channel.owner,
+          personTime: channel.personTime || 0,
+          pendingDelete: false
         });
       }
     }
