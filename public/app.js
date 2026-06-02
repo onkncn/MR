@@ -135,6 +135,29 @@ let chatMessagesList = [];
 let contextMenuChannel = null;
 let pendingJoinChannel = false;
 
+// ====== Feature: Speaking Indicator ======
+let micAnalyser = null;
+let micAnalyserData = null;
+const remoteAnalysers = new Map(); // userName -> { analyser, dataArray }
+const speakingUsers = new Set();
+let speakingCheckInterval = null;
+
+// ====== Feature: PTT / VOX mode ======
+let pttMode = 'normal'; // 'normal' | 'ptt' | 'vox'
+let pttKeyDown = false;
+let voxEnabled = false;
+let voxCheckInterval = null;
+const VOX_THRESHOLD = 30; // volume threshold for VOX
+
+// ====== Feature: Channel Password ======
+let pendingPasswordChannel = null;
+
+// ====== Feature: Visibility ======
+let isPageVisible = true;
+
+// ====== Feature: Owner tracking ======
+let channelOwner = null;
+
 // 恢复保存的按钮状态
 if (typeof updateVideoButton === 'function') updateVideoButton();
 
@@ -173,6 +196,236 @@ loginBtn.addEventListener('click', login);
 logoutBtn.addEventListener('click', logout);
 mobileLogoutBtn.addEventListener('click', logout);
 sidebarOverlay.addEventListener('click', closeSidebar);
+
+// ====== Feature 2: Channel Password ======
+const passwordModal = document.getElementById('passwordModal');
+const closePasswordModal = document.getElementById('closePasswordModal');
+const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
+const confirmPasswordBtn = document.getElementById('confirmPasswordBtn');
+const joinPasswordInput = document.getElementById('joinPasswordInput');
+const newChannelPasswordInput = document.getElementById('newChannelPassword');
+
+closePasswordModal.addEventListener('click', () => { closeModal(passwordModal); pendingPasswordChannel = null; });
+cancelPasswordBtn.addEventListener('click', () => { closeModal(passwordModal); pendingPasswordChannel = null; });
+confirmPasswordBtn.addEventListener('click', () => {
+    if (!pendingPasswordChannel) return;
+    const pwd = joinPasswordInput.value.trim();
+    socket.emit('join-channel', { channelId: pendingPasswordChannel.id, password: pwd });
+    closeModal(passwordModal);
+    joinPasswordInput.value = '';
+    pendingPasswordChannel = null;
+});
+
+// ====== Feature 3: Invite Links ======
+const inviteBtn = document.getElementById('inviteBtn');
+const inviteModal = document.getElementById('inviteModal');
+const closeInviteModal = document.getElementById('closeInviteModal');
+const cancelInviteBtn = document.getElementById('cancelInviteBtn');
+const copyInviteBtn = document.getElementById('copyInviteBtn');
+const inviteLinkInput = document.getElementById('inviteLinkInput');
+
+inviteBtn.addEventListener('click', () => {
+    if (!currentChannel) return;
+    socket.emit('create-invite', { channelId: currentChannel.id });
+});
+closeInviteModal.addEventListener('click', () => closeModal(inviteModal));
+cancelInviteBtn.addEventListener('click', () => closeModal(inviteModal));
+copyInviteBtn.addEventListener('click', () => {
+    inviteLinkInput.select();
+    document.execCommand('copy');
+    copyInviteBtn.textContent = '已复制!';
+    setTimeout(() => { copyInviteBtn.textContent = '复制链接'; }, 2000);
+});
+
+// ====== Feature 4: Kick/Mute Context Menu ======
+const participantContextMenu = document.getElementById('participantContextMenu');
+const ctxKickUser = document.getElementById('ctxKickUser');
+const ctxMuteUser = document.getElementById('ctxMuteUser');
+let contextMenuTarget = null;
+
+function showParticipantContextMenu(targetUser, x, y) {
+    if (!currentChannel || !channelOwner || channelOwner !== userName || targetUser === userName) return;
+    contextMenuTarget = targetUser;
+    participantContextMenu.style.left = Math.min(x, window.innerWidth - 160) + 'px';
+    participantContextMenu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+    const pData = participants.get(targetUser);
+    const isMuted = pData && pData.muted;
+    ctxMuteUser.querySelector('span').textContent = isMuted ? '取消静音' : '静音';
+    participantContextMenu.classList.add('show');
+}
+
+function hideParticipantContextMenu() {
+    participantContextMenu.classList.remove('show');
+    contextMenuTarget = null;
+}
+
+ctxKickUser.addEventListener('click', () => {
+    if (contextMenuTarget && currentChannel) {
+        socket.emit('kick-user', { channelId: currentChannel.id, targetUser: contextMenuTarget });
+    }
+    hideParticipantContextMenu();
+});
+
+ctxMuteUser.addEventListener('click', () => {
+    if (contextMenuTarget && currentChannel) {
+        const pData = participants.get(contextMenuTarget);
+        const isMuted = pData && pData.muted;
+        if (isMuted) {
+            socket.emit('unmute-user', { channelId: currentChannel.id, targetUser: contextMenuTarget });
+        } else {
+            socket.emit('mute-user', { channelId: currentChannel.id, targetUser: contextMenuTarget });
+        }
+    }
+    hideParticipantContextMenu();
+});
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#participantContextMenu')) {
+        hideParticipantContextMenu();
+    }
+});
+
+// ====== Feature 5: PTT/VOX Mode ======
+const togglePTTBtn = document.getElementById('togglePTTBtn');
+const pttIndicator = document.getElementById('pttIndicator');
+
+// Load saved PTT mode
+try {
+    const savedMode = JSON.parse(localStorage.getItem('mr_state') || '{}').pttMode;
+    if (savedMode) pttMode = savedMode;
+} catch(e) {}
+
+function updatePTTButton() {
+    togglePTTBtn.classList.remove('ptt-active', 'vox-active');
+    const label = togglePTTBtn.querySelector('.ptt-mode-label');
+    const icon = togglePTTBtn.querySelector('.ptt-icon');
+    if (pttMode === 'normal') {
+        label.textContent = '普通';
+        icon.textContent = '🎤';
+        togglePTTBtn.title = '语音模式: 普通';
+        pttIndicator.classList.add('hidden');
+    } else if (pttMode === 'ptt') {
+        label.textContent = 'PTT';
+        icon.textContent = '🎙️';
+        togglePTTBtn.title = '语音模式: 按住说话 (Space)';
+        togglePTTBtn.classList.add('ptt-active');
+        pttIndicator.classList.remove('hidden');
+        pttIndicator.classList.remove('talking');
+        pttIndicator.querySelector('span').textContent = '🔇 按住空格键说话';
+    } else if (pttMode === 'vox') {
+        label.textContent = 'VOX';
+        icon.textContent = '🔊';
+        togglePTTBtn.title = '语音模式: 声控';
+        togglePTTBtn.classList.add('vox-active');
+        pttIndicator.classList.add('hidden');
+    }
+}
+
+togglePTTBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (pttMode === 'normal') {
+        pttMode = 'ptt';
+    } else if (pttMode === 'ptt') {
+        pttMode = 'vox';
+    } else {
+        pttMode = 'normal';
+    }
+    saveState('pttMode', pttMode);
+    updatePTTButton();
+    // Handle PTT mode: mute mic by default
+    if (pttMode === 'ptt' && audioTrack && audioEnabled) {
+        audioTrack.enabled = false;
+        socket.emit('speaking-status', { speaking: false });
+    }
+    // Handle VOX mode
+    if (pttMode === 'vox' && audioTrack) {
+        startVoxDetection();
+    } else {
+        stopVoxDetection();
+    }
+    if (pttMode !== 'ptt' && audioTrack && audioEnabled) {
+        audioTrack.enabled = true;
+    }
+});
+
+// PTT keydown/keyup
+document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && pttMode === 'ptt' && currentChannel && audioTrack && !pttKeyDown) {
+        // Don't trigger PTT when typing in input fields
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        pttKeyDown = true;
+        audioTrack.enabled = true;
+        socket.emit('speaking-status', { speaking: true });
+        pttIndicator.classList.add('talking');
+        pttIndicator.querySelector('span').textContent = '🎤 正在说话...';
+    }
+});
+document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && pttMode === 'ptt' && pttKeyDown) {
+        e.preventDefault();
+        pttKeyDown = false;
+        audioTrack.enabled = false;
+        socket.emit('speaking-status', { speaking: false });
+        pttIndicator.classList.remove('talking');
+        pttIndicator.querySelector('span').textContent = '🔇 按住空格键说话';
+    }
+});
+
+function startVoxDetection() {
+    if (!audioTrack || !audioContext) return;
+    stopVoxDetection();
+    voxCheckInterval = setInterval(() => {
+        if (!micAnalyser || !audioEnabled) return;
+        micAnalyser.getByteFrequencyData(micAnalyserData);
+        let sum = 0;
+        for (let i = 0; i < micAnalyserData.length; i++) sum += micAnalyserData[i];
+        const avg = sum / micAnalyserData.length;
+        const speaking = avg > VOX_THRESHOLD;
+        if (speaking !== voxEnabled) {
+            voxEnabled = speaking;
+            audioTrack.enabled = speaking;
+            socket.emit('speaking-status', { speaking: speaking });
+        }
+    }, 100);
+}
+
+function stopVoxDetection() {
+    if (voxCheckInterval) {
+        clearInterval(voxCheckInterval);
+        voxCheckInterval = null;
+    }
+}
+
+updatePTTButton();
+
+// ====== Feature 6: Visibility Change ======
+const bgTabIndicator = document.getElementById('bgTabIndicator');
+
+document.addEventListener('visibilitychange', () => {
+    isPageVisible = !document.hidden;
+    if (document.hidden) {
+        // Page hidden: show background indicator if in a channel
+        if (currentChannel) {
+            bgTabIndicator.classList.remove('hidden');
+        }
+    } else {
+        // Page visible: hide indicator
+        bgTabIndicator.classList.add('hidden');
+        // Verify connections are still active
+        if (currentChannel) {
+            peerConnections.forEach((pc, peerId) => {
+                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                    console.log('连接断开，尝试重建:', peerId);
+                    pc.close();
+                    peerConnections.delete(peerId);
+                    const newPc = createPeerConnection(peerId);
+                    createOfferAndSend(newPc, peerId);
+                }
+            });
+        }
+    }
+});
 toggleAudioBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleAudio();
@@ -648,6 +901,23 @@ function login() {
         sidebar.classList.remove('closed');
         sidebar.classList.add('open');
     }
+    
+    // Feature 7: Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+    
+    // Feature 3: Check for invite URL
+    checkInviteUrl();
+}
+
+function checkInviteUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteToken = urlParams.get('invite');
+    if (inviteToken && userName) {
+        socket.emit('join-by-invite', inviteToken);
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
 }
 
 function logout() {
@@ -1099,6 +1369,13 @@ async function joinChannel(channel) {
         await leaveChannel();
     }
     
+    // Feature 2: Check if channel needs password
+    if (channel.hasPassword) {
+        pendingPasswordChannel = channel;
+        openModal(passwordModal);
+        return;
+    }
+    
     document.body.style.cursor = 'wait';
     
     try {
@@ -1107,10 +1384,12 @@ async function joinChannel(channel) {
         audioEnabled = false;
         audioTrack = null;
         currentChannel = channel;
+        channelOwner = channel.owner || null;
         
-        socket.emit('join-channel', channel.id, userName);
+        socket.emit('join-channel', { channelId: channel.id, password: '' });
         updateAudioButtons();
         updateParticipantsDisplay();
+        updateInviteButton();
         
         // 如果上次麦克风是开启的，自动尝试开麦（会触发权限请求）
         const savedMicState = (() => {
@@ -1186,9 +1465,11 @@ function createChannel() {
         return;
     }
     
-    socket.emit('create-channel', name);
+    const password = newChannelPasswordInput ? newChannelPasswordInput.value.trim() : '';
+    socket.emit('create-channel', { name: name, password: password });
     pendingJoinChannel = true;
     closeModal(createModal);
+    if (newChannelPasswordInput) newChannelPasswordInput.value = '';
 }
 
 async function toggleAudio() {

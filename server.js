@@ -2,6 +2,7 @@ const express = require('express');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
@@ -24,7 +25,7 @@ const options = {
 const server = https.createServer(options, app);
 const io = new Server(server, {
   cors: config.cors,
-  maxHttpBufferSize: 50 * 1024 * 1024 // 50MB，允许发送大图片
+  maxHttpBufferSize: 50 * 1024 * 1024
 });
 
 app.use(cors());
@@ -35,10 +36,46 @@ app.get('/api/config', (req, res) => {
   res.json({ iceServers: config.iceServers });
 });
 
-const channels = new Map();
-// 跟踪每个用户的屏幕共享状态 { channelId -> Map<userId, boolean> }
-const screenShareStatus = new Map();
+// ====== 频道持久化 ======
+const DATA_DIR = path.join(__dirname, 'data');
+const CHANNELS_FILE = path.join(DATA_DIR, 'channels.json');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+function loadChannels() {
+  try {
+    if (fs.existsSync(CHANNELS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CHANNELS_FILE, 'utf-8'));
+      const m = new Map();
+      for (const [id, ch] of Object.entries(data)) {
+        m.set(id, {
+          id,
+          name: ch.name,
+          users: new Set(),
+          password: ch.password || null,
+          owner: ch.owner || null,
+          createdAt: ch.createdAt || Date.now()
+        });
+      }
+      return m;
+    }
+  } catch (e) { console.error('加载频道数据失败:', e); }
+  return new Map();
+}
+
+function saveChannels() {
+  const obj = {};
+  channels.forEach((ch, id) => {
+    obj[id] = { name: ch.name, password: ch.password, owner: ch.owner, createdAt: ch.createdAt };
+  });
+  fs.writeFileSync(CHANNELS_FILE, JSON.stringify(obj, null, 2));
+}
+
+const channels = loadChannels();
+const screenShareStatus = new Map();
+const inviteTokens = new Map(); // token -> { channelId, createdAt, maxUses, uses }
+const mutedUsers = new Map();  // channelId -> Set<userId>
+
+// ====== Socket.IO ======
 io.on('connection', (socket) => {
   console.log('用户连接:', socket.id);
 
@@ -47,28 +84,45 @@ io.on('connection', (socket) => {
     socket.emit('channel-list', Array.from(channels.entries()).map(([id, ch]) => ({
       id,
       name: ch.name,
-      users: Array.from(ch.users)
+      users: Array.from(ch.users),
+      hasPassword: !!ch.password,
+      owner: ch.owner
     })));
   });
 
-  socket.on('create-channel', (channelName) => {
+  // 创建频道（支持密码）
+  socket.on('create-channel', (data) => {
+    const name = typeof data === 'string' ? data : data.name;
+    const password = typeof data === 'object' ? data.password : null;
     const channelId = generateRoomId();
     channels.set(channelId, {
       id: channelId,
-      name: channelName,
-      users: new Set()
+      name,
+      users: new Set(),
+      password: password || null,
+      owner: socket.username,
+      createdAt: Date.now()
     });
+    saveChannels();
     io.emit('channel-created', {
       id: channelId,
-      name: channelName,
-      users: []
+      name,
+      users: [],
+      hasPassword: !!password,
+      owner: socket.username
     });
   });
 
-  socket.on('join-channel', (channelId, userId) => {
+  // 加入频道（密码验证）
+  socket.on('join-channel', (data) => {
+    const channelId = typeof data === 'string' ? data : data.channelId;
+    const password = typeof data === 'object' ? data.password : undefined;
+    const userId = socket.username;
     const channel = channels.get(channelId);
-    if (!channel) {
-      return;
+    if (!channel) return socket.emit('join-error', '频道不存在');
+
+    if (channel.password && channel.password !== password) {
+      return socket.emit('join-error', '密码错误');
     }
 
     socket.join(channelId);
@@ -78,13 +132,14 @@ io.on('connection', (socket) => {
 
     console.log(`用户 ${userId} 加入频道 ${channel.name} (${channelId})`);
 
-    // 发送用户列表（包含屏幕共享状态）
     const channelScreenStatus = screenShareStatus.get(channelId) || new Map();
+    const channelMuted = mutedUsers.get(channelId) || new Set();
     const roomUsers = Array.from(channel.users)
       .filter(u => u !== userId)
       .map(u => ({
         name: u,
-        screenSharing: channelScreenStatus.get(u) || false
+        screenSharing: channelScreenStatus.get(u) || false,
+        muted: channelMuted.has(u)
       }));
     socket.emit('room-users', roomUsers);
     socket.to(channelId).emit('user-connected', userId);
@@ -92,96 +147,152 @@ io.on('connection', (socket) => {
     io.emit('channel-updated', {
       id: channelId,
       name: channel.name,
-      users: Array.from(channel.users)
+      users: Array.from(channel.users),
+      hasPassword: !!channel.password,
+      owner: channel.owner
+    });
+
+    // 通知有人加入
+    socket.to(channelId).emit('user-joined-notification', { user: userId, channel: channel.name });
+  });
+
+  // 生成邀请链接
+  socket.on('create-invite', (data) => {
+    const { channelId, maxUses, expiresIn } = data;
+    const channel = channels.get(channelId);
+    if (!channel) return;
+
+    const token = crypto.randomBytes(8).toString('hex');
+    inviteTokens.set(token, {
+      channelId,
+      createdAt: Date.now(),
+      maxUses: maxUses || 0, // 0 = unlimited
+      uses: 0,
+      expiresIn: expiresIn || 86400000 // default 24h
+    });
+    socket.emit('invite-created', { token, channelId });
+  });
+
+  // 通过邀请链接加入
+  socket.on('join-by-invite', (token) => {
+    const invite = inviteTokens.get(token);
+    if (!invite) return socket.emit('join-error', '邀请链接无效或已过期');
+
+    if (invite.maxUses > 0 && invite.uses >= invite.maxUses) {
+      return socket.emit('join-error', '邀请链接已达使用次数上限');
+    }
+    if (Date.now() - invite.createdAt > invite.expiresIn) {
+      inviteTokens.delete(token);
+      return socket.emit('join-error', '邀请链接已过期');
+    }
+
+    invite.uses++;
+    const channel = channels.get(invite.channelId);
+    if (!channel) return socket.emit('join-error', '频道不存在');
+
+    socket.emit('invite-valid', { channelId: invite.channelId, channelName: channel.name, hasPassword: !!channel.password });
+  });
+
+  // 房主踢人
+  socket.on('kick-user', (data) => {
+    const { channelId, targetUser } = data;
+    const channel = channels.get(channelId);
+    if (!channel || channel.owner !== socket.username) return;
+    if (targetUser === socket.username) return;
+
+    // 找到目标用户的 socket
+    const sockets = io.sockets.sockets;
+    for (const [id, s] of sockets) {
+      if (s.userId === targetUser && s.currentChannel === channelId) {
+        s.emit('kicked', { channel: channel.name });
+        s.leave(channelId);
+        s.currentChannel = null;
+        channel.users.delete(targetUser);
+        socket.to(channelId).emit('user-disconnected', targetUser);
+        break;
+      }
+    }
+    io.emit('channel-updated', {
+      id: channelId,
+      name: channel.name,
+      users: Array.from(channel.users),
+      hasPassword: !!channel.password,
+      owner: channel.owner
     });
   });
 
-  socket.on('offer', (data) => {
+  // 房主静音他人
+  socket.on('mute-user', (data) => {
+    const { channelId, targetUser } = data;
+    const channel = channels.get(channelId);
+    if (!channel || channel.owner !== socket.username) return;
+
+    if (!mutedUsers.has(channelId)) mutedUsers.set(channelId, new Set());
+    mutedUsers.get(channelId).add(targetUser);
+
+    io.to(channelId).emit('user-muted', { user: targetUser, muted: true });
+  });
+
+  socket.on('unmute-user', (data) => {
+    const { channelId, targetUser } = data;
+    const channel = channels.get(channelId);
+    if (!channel || channel.owner !== socket.username) return;
+
+    if (mutedUsers.has(channelId)) mutedUsers.get(channelId).delete(targetUser);
+    io.to(channelId).emit('user-muted', { user: targetUser, muted: false });
+  });
+
+  // 音量/说话状态广播
+  socket.on('speaking-status', (data) => {
     if (socket.currentChannel) {
-      socket.to(socket.currentChannel).emit('offer', data);
+      socket.to(socket.currentChannel).emit('speaking-status', { user: socket.userId, speaking: data.speaking });
     }
+  });
+
+  socket.on('offer', (data) => {
+    if (socket.currentChannel) socket.to(socket.currentChannel).emit('offer', data);
   });
 
   socket.on('answer', (data) => {
-    if (socket.currentChannel) {
-      socket.to(socket.currentChannel).emit('answer', data);
-    }
+    if (socket.currentChannel) socket.to(socket.currentChannel).emit('answer', data);
   });
 
   socket.on('ice-candidate', (data) => {
-    if (socket.currentChannel) {
-      socket.to(socket.currentChannel).emit('ice-candidate', data);
-    }
+    if (socket.currentChannel) socket.to(socket.currentChannel).emit('ice-candidate', data);
   });
 
   socket.on('audio-status', (data) => {
-    if (socket.currentChannel) {
-      socket.to(socket.currentChannel).emit('audio-status', data);
-    }
+    if (socket.currentChannel) socket.to(socket.currentChannel).emit('audio-status', data);
   });
 
   socket.on('screen-share-status', (data) => {
     if (socket.currentChannel) {
-      // 更新服务端状态
       const channelId = socket.currentChannel;
-      if (!screenShareStatus.has(channelId)) {
-        screenShareStatus.set(channelId, new Map());
-      }
+      if (!screenShareStatus.has(channelId)) screenShareStatus.set(channelId, new Map());
       screenShareStatus.get(channelId).set(data.user, data.sharing);
-      
       socket.to(channelId).emit('screen-share-status', data);
     }
   });
 
   socket.on('chat-message', (data) => {
-    if (socket.currentChannel) {
-      socket.to(socket.currentChannel).emit('chat-message', data);
-    }
+    if (socket.currentChannel) socket.to(socket.currentChannel).emit('chat-message', data);
   });
 
   socket.on('leave-channel', () => {
-    if (socket.currentChannel && socket.userId) {
-      const channelId = socket.currentChannel;
-      const userId = socket.userId;
-      const channel = channels.get(channelId);
-      
-      if (channel) {
-        console.log(`用户 ${userId} 离开频道 ${channel.name} (${channelId})`);
-        socket.leave(channelId);
-        socket.to(channelId).emit('user-disconnected', userId);
-        
-        channel.users.delete(userId);
-        
-        // 清理屏幕共享状态
-        if (screenShareStatus.has(channelId)) {
-          screenShareStatus.get(channelId).delete(userId);
-        }
-        
-        if (channel.users.size === 0) {
-          channels.delete(channelId);
-          screenShareStatus.delete(channelId);
-          io.emit('channel-deleted', channelId);
-        } else {
-          io.emit('channel-updated', {
-            id: channelId,
-            name: channel.name,
-            users: Array.from(channel.users)
-          });
-        }
-      }
-      
-      socket.currentChannel = null;
-    }
+    handleLeave(socket);
   });
 
   socket.on('rename-channel', (channelId, newName) => {
     if (channels.has(channelId)) {
       const channel = channels.get(channelId);
       channel.name = newName;
+      saveChannels();
       io.emit('channel-updated', {
         id: channelId,
         name: newName,
-        users: Array.from(channel.users)
+        users: Array.from(channel.users),
+        hasPassword: !!channel.password,
+        owner: channel.owner
       });
     }
   });
@@ -190,50 +301,56 @@ io.on('connection', (socket) => {
     if (channels.has(channelId)) {
       const channel = channels.get(channelId);
       console.log(`频道 ${channel.name} (${channelId}) 被删除`);
-      
-      // 通知频道内所有用户断开
-      channel.users.forEach(userId => {
-        io.to(channelId).emit('user-disconnected', userId);
-      });
-      
+      io.to(channelId).emit('user-disconnected', null);
       channels.delete(channelId);
       screenShareStatus.delete(channelId);
+      mutedUsers.delete(channelId);
+      saveChannels();
       io.emit('channel-deleted', channelId);
     }
   });
 
   socket.on('disconnect', () => {
-    if (socket.currentChannel && socket.userId) {
-      const channelId = socket.currentChannel;
-      const userId = socket.userId;
-      const channel = channels.get(channelId);
-      
-      if (channel) {
-        console.log(`用户 ${userId} 断开连接，离开频道 ${channel.name} (${channelId})`);
-        socket.to(channelId).emit('user-disconnected', userId);
-        
-        channel.users.delete(userId);
-        
-        // 清理屏幕共享状态
-        if (screenShareStatus.has(channelId)) {
-          screenShareStatus.get(channelId).delete(userId);
-        }
-        
-        if (channel.users.size === 0) {
-          channels.delete(channelId);
-          screenShareStatus.delete(channelId);
-          io.emit('channel-deleted', channelId);
-        } else {
-          io.emit('channel-updated', {
-            id: channelId,
-            name: channel.name,
-            users: Array.from(channel.users)
-          });
-        }
-      }
-    }
+    handleLeave(socket);
   });
 });
+
+function handleLeave(socket) {
+  if (socket.currentChannel && socket.userId) {
+    const channelId = socket.currentChannel;
+    const userId = socket.userId;
+    const channel = channels.get(channelId);
+
+    if (channel) {
+      console.log(`用户 ${userId} 离开频道 ${channel.name} (${channelId})`);
+      socket.leave(channelId);
+      socket.to(channelId).emit('user-disconnected', userId);
+      socket.to(channelId).emit('user-left-notification', { user: userId, channel: channel.name });
+
+      channel.users.delete(userId);
+      if (screenShareStatus.has(channelId)) screenShareStatus.get(channelId).delete(userId);
+
+      if (channel.users.size === 0) {
+        // 不删除持久化频道，只清空在线用户
+        if (!channel.password) {
+          channels.delete(channelId);
+          io.emit('channel-deleted', channelId);
+        }
+        screenShareStatus.delete(channelId);
+        mutedUsers.delete(channelId);
+      } else {
+        io.emit('channel-updated', {
+          id: channelId,
+          name: channel.name,
+          users: Array.from(channel.users),
+          hasPassword: !!channel.password,
+          owner: channel.owner
+        });
+      }
+    }
+    socket.currentChannel = null;
+  }
+}
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -248,9 +365,7 @@ function getLocalIP() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
     }
   }
   return 'localhost';
@@ -260,11 +375,9 @@ server.listen(PORT, HOST, () => {
   const localIP = getLocalIP();
   console.log('========================================');
   console.log('语音频道服务器已启动！');
-  console.log('【注意】首次访问时浏览器会提示证书不安全，请点击"高级"->"继续访问"');
-  console.log('');
   console.log(`本地访问: https://localhost:${PORT}`);
   console.log(`局域网访问: https://${localIP}:${PORT}`);
   console.log(`外网访问: https://${DOMAIN}:${PORT}`);
-  console.log('');
+  console.log(`持久化频道: ${channels.size} 个`);
   console.log('========================================');
 });

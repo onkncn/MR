@@ -3,3 +3,4 @@ uploads/
 config.json
 .env
 *.log
+data/

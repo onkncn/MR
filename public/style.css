@@ -428,6 +428,17 @@ body {
     font-weight: 600;
     flex-shrink: 0;
     position: relative;
+    transition: box-shadow 0.3s;
+}
+
+.channel-participant-item.speaking .channel-participant-avatar {
+    box-shadow: 0 0 0 3px #3ba55c, 0 0 8px #3ba55c88;
+    animation: speaking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes speaking-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px #3ba55c, 0 0 8px #3ba55c88; }
+    50% { box-shadow: 0 0 0 5px #3ba55c, 0 0 16px #3ba55caa; }
 }
 
 .channel-participant-name {
@@ -1939,6 +1950,118 @@ body {
 
 .denoise-btn.active svg line:last-child {
     display: none;
+}
+
+/* ====== PTT / VOX mode button ====== */
+.ptt-btn {
+    width: auto !important;
+    padding: 6px 12px !important;
+    gap: 4px;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 48px;
+}
+
+.ptt-icon {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.ptt-mode-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    color: inherit;
+}
+
+.ptt-btn.ptt-active {
+    background: #f04747 !important;
+    color: #ffffff;
+}
+
+.ptt-btn.vox-active {
+    background: #ed6e25 !important;
+    color: #ffffff;
+}
+
+/* ====== PTT indicator overlay ====== */
+.ptt-indicator {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(240, 71, 71, 0.9);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 9999;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.ptt-indicator.talking {
+    background: rgba(59, 165, 92, 0.9);
+}
+
+/* ====== Background tab indicator ====== */
+.bg-tab-indicator {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: rgba(47, 49, 54, 0.95);
+    color: #dcddde;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 9999;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    border: 1px solid #3ba55c;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.bg-tab-indicator.hidden {
+    display: none;
+}
+
+.bg-tab-dot {
+    width: 8px;
+    height: 8px;
+    background: #3ba55c;
+    border-radius: 50%;
+    animation: bg-dot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes bg-dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.bg-tab-text {
+    font-size: 12px;
+    color: #b9bbbe;
+}
+
+/* ====== Invite button in header ====== */
+#inviteBtn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* ====== Participant context menu styling ====== */
+#participantContextMenu .channel-context-item.danger {
+    color: #f04747;
+}
+
+#participantContextMenu .channel-context-item.danger:hover {
+    background: #f04747;
+    color: #fff;
 }
 
 /* ====== 桌面端聊天全屏模式 ====== */
