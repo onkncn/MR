@@ -1362,7 +1362,9 @@ async function toggleDenoise() {
             } else {
                 // 桌面端: 重新连接 GainNode 管线
                 if (micGainNode && audioContext) {
+                    if (micGainNode._source) try { micGainNode._source.disconnect(); } catch(e) {}
                     const source = audioContext.createMediaStreamSource(newStream);
+                    micGainNode._source = source;
                     source.connect(micGainNode);
                     if (micGainDest) micGainNode.connect(micGainDest);
                     if (audioMixDest) micGainNode.connect(audioMixDest);
@@ -2031,9 +2033,12 @@ socket.on('room-users', (users) => {
         // 支持新格式 { name, screenSharing } 和旧格式 (string)
         const name = typeof u === 'string' ? u : u.name;
         const isSharing = typeof u === 'object' ? u.screenSharing : false;
+        const isMuted = typeof u === 'object' && u.muted;
         
         if (name !== userName && !participants.has(name)) {
-            participants.set(name, { audioEnabled: true, screenSharing: isSharing || false });
+            participants.set(name, { audioEnabled: !isMuted, screenSharing: isSharing || false, muted: isMuted || false });
+        } else if (name !== userName && participants.has(name) && isMuted) {
+            participants.get(name).muted = isMuted;
         }
     });
     updateParticipantsDisplay();

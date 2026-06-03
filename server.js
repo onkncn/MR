@@ -63,12 +63,38 @@ function loadChannels() {
   return new Map();
 }
 
+let channelsDirty = false;
+let messagesDirty = false;
+let saveTimer = null;
+
+function debouncedSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    if (channelsDirty) {
+      channelsDirty = false;
+      try {
+        const obj = {};
+        channels.forEach((ch, id) => {
+          obj[id] = { name: ch.name, password: ch.password, owner: ch.owner, createdAt: ch.createdAt, personTime: ch.personTime || 0 };
+        });
+        fs.writeFileSync(CHANNELS_FILE, JSON.stringify(obj, null, 2));
+      } catch(e) { console.error('保存频道失败:', e); }
+    }
+    if (messagesDirty) {
+      messagesDirty = false;
+      try {
+        const obj = {};
+        channelMessages.forEach((msgs, id) => { obj[id] = msgs; });
+        fs.writeFileSync(MESSAGES_FILE, JSON.stringify(obj, null, 2));
+      } catch(e) { console.error('保存消息失败:', e); }
+    }
+  }, 1000);
+}
+
 function saveChannels() {
-  const obj = {};
-  channels.forEach((ch, id) => {
-    obj[id] = { name: ch.name, password: ch.password, owner: ch.owner, createdAt: ch.createdAt, personTime: ch.personTime || 0 };
-  });
-  fs.writeFileSync(CHANNELS_FILE, JSON.stringify(obj, null, 2));
+  channelsDirty = true;
+  debouncedSave();
 }
 
 const channels = loadChannels();
@@ -98,9 +124,8 @@ function loadMessages() {
 }
 
 function saveMessages() {
-  const obj = {};
-  channelMessages.forEach((msgs, id) => { obj[id] = msgs; });
-  fs.writeFileSync(MESSAGES_FILE, JSON.stringify(obj, null, 2));
+  messagesDirty = true;
+  debouncedSave();
 }
 
 const channelMessages = loadMessages();
@@ -110,7 +135,10 @@ io.on('connection', (socket) => {
   console.log('用户连接:', socket.id);
 
   socket.on('login', (username) => {
-    socket.username = username;
+    if (!username || typeof username !== 'string') return;
+    const name = username.trim();
+    if (name.length === 0 || name.length > 20) return;
+    socket.username = name;
     socket.emit('channel-list', Array.from(channels.entries()).map(([id, ch]) => ({
       id,
       name: ch.name,
@@ -351,10 +379,11 @@ io.on('connection', (socket) => {
   // 消息撤回
   socket.on('delete-message', (msgId) => {
     if (!socket.currentChannel) return;
+    const channel = channels.get(socket.currentChannel);
     const msgs = channelMessages.get(socket.currentChannel);
     if (!msgs) return;
     const idx = msgs.findIndex(m => m.id === msgId);
-    if (idx >= 0 && msgs[idx].user === socket.username) {
+    if (idx >= 0 && (msgs[idx].user === socket.username || (channel && channel.owner === socket.username))) {
       msgs.splice(idx, 1);
       saveMessages();
       io.to(socket.currentChannel).emit('message-deleted', msgId);
