@@ -1153,7 +1153,7 @@ async function leaveChannel() {
     });
     remoteAudioElements.clear();
     
-    socket.emit('leave-channel', currentChannel.id, userName);
+    socket.emit('leave-channel');
     
     currentChannel = null;
     audioTrack = null;
@@ -1372,7 +1372,6 @@ async function toggleDenoise() {
             }
             
             // 更新本地流
-            localStream.removeTrack(localStream.getAudioTracks()[0]);
             localStream.addTrack(sendTrack);
             
             // 替换所有 PeerConnection 中的音轨
@@ -2098,7 +2097,6 @@ function sendChatMessage() {
             type: 'text'
         };
         socket.emit('chat-message', msgData);
-        addChatMessage(msgData);
         chatInput.value = '';
     }
     
@@ -2111,7 +2109,6 @@ function sendChatMessage() {
             fileName: img.fileName
         };
         socket.emit('chat-message', msgData);
-        addChatMessage(msgData);
     });
     
     pendingImages = [];

@@ -124,6 +124,7 @@ io.on('connection', (socket) => {
 
   // 创建频道（支持密码）
   socket.on('create-channel', (data) => {
+    if (!socket.username) return;
     const name = typeof data === 'string' ? data : data.name;
     const password = typeof data === 'object' ? data.password : null;
     const channelId = generateRoomId();
@@ -213,6 +214,7 @@ io.on('connection', (socket) => {
     const { channelId, maxUses, expiresIn } = data;
     const channel = channels.get(channelId);
     if (!channel) return;
+    if (socket.currentChannel !== channelId && channel.owner !== socket.username) return;
 
     const token = crypto.randomBytes(8).toString('hex');
     inviteTokens.set(token, {
@@ -260,6 +262,7 @@ io.on('connection', (socket) => {
         s.leave(channelId);
         s.currentChannel = null;
         channel.users.delete(targetUser);
+        if (joinTimers.has(channelId)) joinTimers.get(channelId).delete(targetUser);
         socket.to(channelId).emit('user-disconnected', targetUser);
         break;
       }
@@ -316,7 +319,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('audio-status', (data) => {
-    if (socket.currentChannel) socket.to(socket.currentChannel).emit('audio-status', data);
+    if (socket.currentChannel) socket.to(socket.currentChannel).emit('audio-status', { user: socket.userId, ...data });
   });
 
   socket.on('screen-share-status', (data) => {
@@ -324,11 +327,12 @@ io.on('connection', (socket) => {
       const channelId = socket.currentChannel;
       if (!screenShareStatus.has(channelId)) screenShareStatus.set(channelId, new Map());
       screenShareStatus.get(channelId).set(data.user, data.sharing);
-      socket.to(channelId).emit('screen-share-status', data);
+      socket.to(channelId).emit('screen-share-status', { user: socket.userId, sharing: data.sharing });
     }
   });
 
   socket.on('chat-message', (data) => {
+    if (data.message && data.message.length > 100000) return;
     if (socket.currentChannel) {
       const msgId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
       const msg = { ...data, id: msgId, reactions: {} };
@@ -406,8 +410,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('rename-channel', (channelId, newName) => {
+    const channel = channels.get(channelId);
+    if (!channel || channel.owner !== socket.username) return;
     if (channels.has(channelId)) {
-      const channel = channels.get(channelId);
       channel.name = newName;
       saveChannels();
       io.emit('channel-updated', {
@@ -526,7 +531,11 @@ function handleLeave(socket) {
 }
 
 function generateRoomId() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+  let id;
+  do {
+    id = Math.random().toString(36).substring(2, 8).toUpperCase();
+  } while (channels.has(id));
+  return id;
 }
 
 const os = require('os');
