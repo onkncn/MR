@@ -39,9 +39,12 @@ function saveState(key, value) {
 }
 
 loadSavedState();
+// BUGFIX: L4 初始化侧边栏状态
+initSidebar();
 let currentScreenSharer = null;
 let participants = new Map();
 const peerConnections = new Map();
+const pendingCandidates = new Map(); // BUGFIX: H3 ICE候选队列
 const screenStreams = new Map(); // 存储每个用户的屏幕共享流
 let viewingScreenOf = null; // 当前正在观看谁的屏幕
 const channelList = [];
@@ -130,10 +133,11 @@ const ctxDelete = document.getElementById('ctxDelete');
 let sidebarOpen = false;
 let micVolume = 1;
 let speakerVolume = 1;
+let imageIdCounter = 0; // BUGFIX: L7 自增计数器防碰撞
 let pendingImages = [];
 let chatMessagesList = [];
 let contextMenuChannel = null;
-let pendingJoinChannel = false;
+let pendingJoinChannel = null; // BUGFIX: C2 存储待加入频道名
 
 // 恢复保存的按钮状态
 if (typeof updateVideoButton === 'function') updateVideoButton();
@@ -303,8 +307,9 @@ setupVolumeSlider(micVolumeSlider, (val) => {
 // 扬声器音量
 setupVolumeSlider(speakerVolumeSlider, (val) => {
     speakerVolume = val / 100;
-    document.querySelectorAll('video').forEach(video => {
-        video.volume = Math.min(speakerVolume, 1);
+    // BUGFIX: H1 远程音频是audio元素，需同时控制video和audio
+    document.querySelectorAll('video, audio').forEach(el => {
+        el.volume = Math.min(speakerVolume, 1);
     });
 });
 // ====== 自定义音量滑块 end ======
@@ -827,9 +832,11 @@ function showContextMenu(channel, x, y) {
     channelContextMenu.style.left = Math.min(x, window.innerWidth - 160) + 'px';
     channelContextMenu.style.top = Math.min(y, window.innerHeight - 140) + 'px';
     channelContextMenu.classList.add('show');
-    
+
     // 如果是当前频道，高亮加入按钮
     ctxJoin.style.display = (!currentChannel || currentChannel.id !== channel.id) ? '' : 'none';
+    // BUGFIX: L1 非房主隐藏删除按钮
+    ctxDelete.style.display = (channel.owner === userName) ? '' : 'none';
 }
 
 function hideContextMenu() {
@@ -1095,20 +1102,33 @@ function updateScreenShareBar() {
 })();
 
 async function joinChannel(channel) {
+    // BUGFIX: C2/M6 手动加入频道时清除 pendingJoinChannel
+    pendingJoinChannel = null;
     if (currentChannel) {
         await leaveChannel();
     }
-    
+
     document.body.style.cursor = 'wait';
-    
+
     try {
         // 加入频道时默认关闭麦克风，如果上次是开的则自动尝试开启
         localStream = new MediaStream();
         audioEnabled = false;
         audioTrack = null;
+
+        // BUGFIX: L5 密码保护频道先询问密码
+        let password = '';
+        if (channel.hasPassword) {
+            password = prompt(`请输入频道「${channel.name}」的密码：`);
+            if (password === null) {
+                document.body.style.cursor = '';
+                return; // 用户取消
+            }
+        }
+
         currentChannel = channel;
-        
-        socket.emit('join-channel', { channelId: channel.id, password: '' });
+
+        socket.emit('join-channel', { channelId: channel.id, password: password });
         updateAudioButtons();
         updateParticipantsDisplay();
         
@@ -1146,13 +1166,21 @@ async function leaveChannel() {
     peerConnections.clear();
     participants.clear();
     
-    // 清理远程音频元素
+        // 清理远程音频元素
     remoteAudioElements.forEach(audio => {
         audio.srcObject = null;
         audio.pause();
     });
     remoteAudioElements.clear();
-    
+
+    // BUGFIX: M10 断开 Web Audio 节点（不关闭 audioContext，因为可能重用）
+    if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
+    if (micGainDest) { try { micGainDest.disconnect(); } catch(e) {} micGainDest = null; }
+    if (audioMixDest) { try { audioMixDest.disconnect(); } catch(e) {} audioMixDest = null; }
+
+    // BUGFIX: H3 清理 pendingCandidates
+    pendingCandidates.clear();
+
     socket.emit('leave-channel');
     
     currentChannel = null;
@@ -1185,9 +1213,15 @@ function createChannel() {
         alert('请输入频道名称');
         return;
     }
-    
-    socket.emit('create-channel', { name: name, password: '' });
-    pendingJoinChannel = true;
+    // BUGFIX: L5 传递密码
+    const password = document.getElementById('newChannelPassword')?.value?.trim() || '';
+
+    socket.emit('create-channel', { name: name, password: password });
+    // BUGFIX: C2 存储频道名，5秒超时自动清除
+    pendingJoinChannel = name;
+    setTimeout(() => {
+        if (pendingJoinChannel === name) pendingJoinChannel = null;
+    }, 5000);
     closeModal(createModal);
 }
 
@@ -1787,6 +1821,35 @@ function createPeerConnection(remoteUserName) {
     
     pc.onconnectionstatechange = () => {
         console.log(`与 ${remoteUserName} 的连接状态:`, pc.connectionState);
+        // BUGFIX: M8 failed 状态清理 PC 和相关资源
+        if (pc.connectionState === 'failed') {
+            console.log(`[M8] ${remoteUserName} 连接失败，清理PC`);
+            if (peerConnections.has(remoteUserName)) {
+                peerConnections.get(remoteUserName).close();
+                peerConnections.delete(remoteUserName);
+            }
+            participants.delete(remoteUserName);
+            remoteAudioElements.forEach(audio => {
+                if (audio.id === 'remote-audio-' + remoteUserName) {
+                    audio.srcObject = null;
+                    audio.pause();
+                    remoteAudioElements.delete(audio);
+                }
+            });
+            screenStreams.delete(remoteUserName);
+            updateScreenShareBar();
+            if (viewingScreenOf === remoteUserName) {
+                const otherSharers = Array.from(screenStreams.keys());
+                if (otherSharers.length > 0) {
+                    switchScreenView(otherSharers[0]);
+                } else {
+                    viewingScreenOf = null;
+                    currentScreenSharer = null;
+                    showScreenShare(null);
+                }
+            }
+            updateParticipantsDisplay();
+        }
     };
     
     return pc;
@@ -1886,7 +1949,38 @@ function toggleScreenFullscreen() {
     }
 }
 
+// BUGFIX: H3 刷新 ICE 候选队列
+async function flushPendingCandidates(peerName) {
+    if (pendingCandidates.has(peerName)) {
+        const pc = peerConnections.get(peerName);
+        if (!pc) { pendingCandidates.delete(peerName); return; }
+        const candidates = pendingCandidates.get(peerName);
+        pendingCandidates.delete(peerName);
+        for (const candidate of candidates) {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+                console.error('[H3] 添加队列ICE候选失败:', err);
+            }
+        }
+    }
+}
+
 socket.on('join-error', (msg) => {
+    // BUGFIX: L5 密码错误时允许重试
+    if (msg === '密码错误' && currentChannel) {
+        const retryPwd = prompt(`密码错误，请重新输入频道「${currentChannel.name}」的密码：`);
+        if (retryPwd) {
+            socket.emit('join-channel', { channelId: currentChannel.id, password: retryPwd });
+            return;
+        }
+        // 用户取消重试，清理状态
+        currentChannel = null;
+        document.body.style.cursor = '';
+        updateParticipantsDisplay();
+        updateChannelList();
+        return;
+    }
     alert('加入频道失败: ' + msg);
 });
 
@@ -1901,8 +1995,9 @@ socket.on('channel-created', (channel) => {
     console.log('频道创建:', channel);
     channelList.push(channel);
     updateChannelList();
-    if (pendingJoinChannel) {
-        pendingJoinChannel = false;
+    // BUGFIX: C2 确认是自己创建的频道才加入
+    if (pendingJoinChannel && channel.name === pendingJoinChannel) {
+        pendingJoinChannel = null;
         joinChannel(channel);
     }
 });
@@ -1979,17 +2074,30 @@ socket.on('offer', async (data) => {
     if (data.to !== userName) return;
     const audioLines = data.sdp.sdp ? data.sdp.sdp.split('\r\n').filter(l => l.startsWith('m=audio')) : [];
     console.log('[收到offer] from:', data.from, 'audio:', audioLines);
-    
+
     let pc = peerConnections.get(data.from);
     if (!pc) {
         pc = createPeerConnection(data.from);
     }
     console.log('[收到offer] signalingState:', pc.signalingState);
     try {
+        // BUGFIX: H2 处理 offer 冲突（glare）
+        // polite端（userName < data.from）执行 rollback，impolite端忽略本次 offer
+        if (pc.signalingState !== 'stable') {
+            if (userName < data.from) {
+                console.log('[H2] polite端 rollback');
+                await pc.setLocalDescription({ type: 'rollback' });
+            } else {
+                console.log('[H2] impolite端忽略冲突 offer from:', data.from);
+                return;
+            }
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        // BUGFIX: H3 remoteDescription 就绪后刷新 ICE 候选队列
+        await flushPendingCandidates(data.from);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        
+
         socket.emit('answer', {
             sdp: answer,
             from: userName,
@@ -2004,11 +2112,13 @@ socket.on('offer', async (data) => {
 socket.on('answer', async (data) => {
     if (data.to !== userName) return;
     console.log('收到 answer 从:', data.from);
-    
+
     const pc = peerConnections.get(data.from);
     if (pc) {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            // BUGFIX: H3 remoteDescription 就绪后刷新 ICE 候选队列
+            await flushPendingCandidates(data.from);
         } catch (err) {
             console.error('处理 answer 失败:', err);
         }
@@ -2019,8 +2129,15 @@ socket.on('ice-candidate', async (data) => {
     if (data.to !== userName) return;
     try {
         const pc = peerConnections.get(data.from);
-        if (pc && data.candidate) {
+        if (!pc || !data.candidate) return;
+        // BUGFIX: H3 remoteDescription 未就绪时队列化 ICE 候选
+        if (pc.currentRemoteDescription && pc.currentRemoteDescription.type) {
             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } else {
+            if (!pendingCandidates.has(data.from)) {
+                pendingCandidates.set(data.from, []);
+            }
+            pendingCandidates.get(data.from).push(data.candidate);
         }
     } catch (err) {
         console.error('添加 ICE 候选失败:', err);
@@ -2138,7 +2255,7 @@ function handleChatPaste(e) {
                 const reader = new FileReader();
                 reader.onload = (evt) => {
                     const imageData = {
-                        id: Date.now() + Math.random(),
+                        id: ++imageIdCounter, // BUGFIX: L7 自增计数器防碰撞
                         dataUrl: evt.target.result,
                         fileName: '粘贴图片.png'
                     };
@@ -2166,7 +2283,7 @@ function handleChatFile() {
     const reader = new FileReader();
     reader.onload = (e) => {
         const imageData = {
-            id: Date.now() + Math.random(),
+            id: ++imageIdCounter, // BUGFIX: L7 自增计数器防碰撞
             dataUrl: e.target.result,
             fileName: file.name,
             type: file.type.startsWith('image') ? 'image' : 'video'
@@ -2285,36 +2402,46 @@ function clearImagePreview() {
     chatPreviewArea.classList.add('hidden');
 }
 
+// BUGFIX: H4 模块级图片弹窗状态与处理器
+let currentImageModalOverlay = null;
+
+function handleModalKeydown(e) {
+    if (e.key === 'Escape') {
+        closeImageModal();
+    }
+}
+
+function closeImageModal() {
+    if (currentImageModalOverlay) {
+        currentImageModalOverlay.remove();
+        currentImageModalOverlay = null;
+    }
+    document.removeEventListener('keydown', handleModalKeydown);
+}
+
 function openImageModal(imageUrl) {
+    // 关闭已存在的弹窗
+    closeImageModal();
+
     const overlay = document.createElement('div');
     overlay.className = 'image-modal-overlay';
     overlay.onclick = closeImageModal;
-    
+    currentImageModalOverlay = overlay;
+
     const img = document.createElement('img');
     img.src = imageUrl;
     img.className = 'image-modal-content';
     img.onclick = (e) => e.stopPropagation();
-    
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'image-modal-close';
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = closeImageModal;
-    
+
     overlay.appendChild(img);
     overlay.appendChild(closeBtn);
     document.body.appendChild(overlay);
-    
+
     document.addEventListener('keydown', handleModalKeydown);
-    
-    function closeImageModal() {
-        overlay.remove();
-        document.removeEventListener('keydown', handleModalKeydown);
-    }
-    
-    function handleModalKeydown(e) {
-        if (e.key === 'Escape') {
-            closeImageModal();
-        }
-    }
 }
 
