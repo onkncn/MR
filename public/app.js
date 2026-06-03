@@ -97,6 +97,8 @@ const screenFullscreenBtn = document.getElementById('screenFullscreenBtn');
 const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebarToggle');
 
+let sidebarOpen = false; // 必须在 initSidebar() 之前声明（let TDZ）
+
 // BUGFIX: L4 初始化侧边栏状态
 initSidebar();
 
@@ -131,7 +133,6 @@ const ctxRename = document.getElementById('ctxRename');
 const ctxJoin = document.getElementById('ctxJoin');
 const ctxDelete = document.getElementById('ctxDelete');
 
-let sidebarOpen = false;
 let micVolume = 1;
 let speakerVolume = 1;
 let imageIdCounter = 0; // BUGFIX: L7 自增计数器防碰撞
