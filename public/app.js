@@ -39,8 +39,6 @@ function saveState(key, value) {
 }
 
 loadSavedState();
-// BUGFIX: L4 初始化侧边栏状态
-initSidebar();
 let currentScreenSharer = null;
 let participants = new Map();
 const peerConnections = new Map();
@@ -98,6 +96,9 @@ const screenSharingUser = document.getElementById('screenSharingUser');
 const screenFullscreenBtn = document.getElementById('screenFullscreenBtn');
 const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebarToggle');
+
+// BUGFIX: L4 初始化侧边栏状态
+initSidebar();
 
 const createModal = document.getElementById('createModal');
 const closeCreateModal = document.getElementById('closeCreateModal');
