@@ -5,7 +5,7 @@ let audioTrack;
 let screenStream;
 let userName;
 let currentChannel = null;
-let audioEnabled = true;
+let audioEnabled = false;
 let denoiseEnabled = true;
 let screenSharing = false;
 let videoEnabled = true; // 扬声器状态
@@ -1108,7 +1108,7 @@ async function joinChannel(channel) {
         audioTrack = null;
         currentChannel = channel;
         
-        socket.emit('join-channel', channel.id, userName);
+        socket.emit('join-channel', { channelId: channel.id, password: '' });
         updateAudioButtons();
         updateParticipantsDisplay();
         
@@ -1186,7 +1186,7 @@ function createChannel() {
         return;
     }
     
-    socket.emit('create-channel', name);
+    socket.emit('create-channel', { name: name, password: '' });
     pendingJoinChannel = true;
     closeModal(createModal);
 }
@@ -1349,7 +1349,8 @@ async function toggleDenoise() {
             newTrack.enabled = audioEnabled;
             
             // 替换本地流中的音轨
-            localStream.removeTrack(audioTrack);
+            const oldSendTrack = localStream.getAudioTracks()[0];
+            if (oldSendTrack) localStream.removeTrack(oldSendTrack);
             audioTrack.stop();
             audioTrack = newTrack;
             
@@ -1812,8 +1813,20 @@ async function createOfferAndSend(pc, remoteUserName) {
 async function renegotiate(pc, remoteUserName) {
     try {
         if (pc.signalingState !== 'stable') {
-            console.log('[renegotiate] 跳过，signalingState:', pc.signalingState);
-            return;
+            // 等待状态变为 stable 后重试（处理 offer collision）
+            console.log('[renegotiate] signalingState:', pc.signalingState, '等待 stable 后重试');
+            await new Promise(resolve => {
+                const check = () => {
+                    if (pc.signalingState === 'stable') { resolve(); return; }
+                    if (pc.signalingState === 'closed') { resolve(); return; }
+                    pc.addEventListener('signalingstatechange', check, { once: true });
+                };
+                check();
+            });
+            if (pc.signalingState !== 'stable') {
+                console.log('[renegotiate] 放弃，signalingState:', pc.signalingState);
+                return;
+            }
         }
         const senders = pc.getSenders().map(s => s.track ? s.track.kind + ':' + s.track.id.substring(0,8) : 'null');
         console.log('[renegotiate] peer:', remoteUserName, 'senders:', senders);
@@ -1871,6 +1884,10 @@ function toggleScreenFullscreen() {
         }
     }
 }
+
+socket.on('join-error', (msg) => {
+    alert('加入频道失败: ' + msg);
+});
 
 socket.on('channel-list', (list) => {
     console.log('收到频道列表:', list);
@@ -2299,8 +2316,3 @@ function openImageModal(imageUrl) {
     }
 }
 
-function toggleChatPanel() { // removed: dead code
-}
-
-function clearChatMessages() { // removed: dead code
-}
