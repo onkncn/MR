@@ -106,6 +106,16 @@ const deleteTimers = new Map(); // channelId -> timeout handle
 const typingUsers = new Map(); // channelId -> Map<userId, timeout>
 const MAX_MESSAGES = 200; // 每频道最多存储消息数
 
+// 定期清理过期邀请令牌（每 10 分钟）
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, invite] of inviteTokens) {
+    if (now - invite.createdAt > invite.expiresIn) {
+      inviteTokens.delete(token);
+    }
+  }
+}, 10 * 60 * 1000);
+
 // ====== 消息持久化 ======
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 
@@ -154,11 +164,14 @@ io.on('connection', (socket) => {
   socket.on('create-channel', (data) => {
     if (!socket.username) return;
     const name = typeof data === 'string' ? data : data.name;
+    if (!name || typeof name !== 'string') return;
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0 || trimmedName.length > 30) return;
     const password = typeof data === 'object' ? data.password : null;
     const channelId = generateRoomId();
     channels.set(channelId, {
       id: channelId,
-      name,
+      name: trimmedName,
       users: new Set(),
       password: password || null,
       owner: socket.username,
@@ -168,7 +181,7 @@ io.on('connection', (socket) => {
     saveChannels();
     io.emit('channel-created', {
       id: channelId,
-      name,
+      name: trimmedName,
       users: [],
       hasPassword: !!password,
       owner: socket.username,
@@ -179,6 +192,7 @@ io.on('connection', (socket) => {
 
   // 加入频道（密码验证）
   socket.on('join-channel', (data) => {
+    if (!socket.username) return;
     const channelId = typeof data === 'string' ? data : data.channelId;
     const password = typeof data === 'object' ? data.password : undefined;
     const userId = socket.username;
@@ -291,6 +305,14 @@ io.on('connection', (socket) => {
         s.currentChannel = null;
         channel.users.delete(targetUser);
         if (joinTimers.has(channelId)) joinTimers.get(channelId).delete(targetUser);
+        // 清理输入状态
+        if (typingUsers.has(channelId)) {
+          const typeMap = typingUsers.get(channelId);
+          if (typeMap.has(targetUser)) {
+            clearTimeout(typeMap.get(targetUser));
+            typeMap.delete(targetUser);
+          }
+        }
         socket.to(channelId).emit('user-disconnected', targetUser);
         break;
       }
@@ -335,35 +357,47 @@ io.on('connection', (socket) => {
   });
 
   socket.on('offer', (data) => {
-    if (socket.currentChannel) socket.to(socket.currentChannel).emit('offer', data);
+    if (socket.currentChannel) {
+      data.from = socket.userId;
+      socket.to(socket.currentChannel).emit('offer', data);
+    }
   });
 
   socket.on('answer', (data) => {
-    if (socket.currentChannel) socket.to(socket.currentChannel).emit('answer', data);
+    if (socket.currentChannel) {
+      data.from = socket.userId;
+      socket.to(socket.currentChannel).emit('answer', data);
+    }
   });
 
   socket.on('ice-candidate', (data) => {
-    if (socket.currentChannel) socket.to(socket.currentChannel).emit('ice-candidate', data);
+    if (socket.currentChannel) {
+      data.from = socket.userId;
+      socket.to(socket.currentChannel).emit('ice-candidate', data);
+    }
   });
 
   socket.on('audio-status', (data) => {
-    if (socket.currentChannel) socket.to(socket.currentChannel).emit('audio-status', { user: socket.userId, ...data });
+    if (socket.currentChannel) {
+      socket.to(socket.currentChannel).emit('audio-status', { user: socket.userId, enabled: !!data.enabled });
+    }
   });
 
   socket.on('screen-share-status', (data) => {
     if (socket.currentChannel) {
       const channelId = socket.currentChannel;
       if (!screenShareStatus.has(channelId)) screenShareStatus.set(channelId, new Map());
-      screenShareStatus.get(channelId).set(data.user, data.sharing);
+      screenShareStatus.get(channelId).set(socket.userId, !!data.sharing);
       socket.to(channelId).emit('screen-share-status', { user: socket.userId, sharing: data.sharing });
     }
   });
 
   socket.on('chat-message', (data) => {
-    if (data.message && data.message.length > 100000) return;
+    if (!socket.username || !socket.currentChannel) return;
+    if (!data || !data.message || data.message.length > 100000) return;
     if (socket.currentChannel) {
       const msgId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-      const msg = { ...data, id: msgId, reactions: {} };
+      const msg = { ...data, user: socket.username, id: msgId, reactions: {} };
       // 持久化
       if (!channelMessages.has(socket.currentChannel)) channelMessages.set(socket.currentChannel, []);
       const msgs = channelMessages.get(socket.currentChannel);
@@ -441,12 +475,15 @@ io.on('connection', (socket) => {
   socket.on('rename-channel', (channelId, newName) => {
     const channel = channels.get(channelId);
     if (!channel || channel.owner !== socket.username) return;
+    if (!newName || typeof newName !== 'string') return;
+    const trimmedNewName = newName.trim();
+    if (trimmedNewName.length === 0 || trimmedNewName.length > 30) return;
     if (channels.has(channelId)) {
-      channel.name = newName;
+      channel.name = trimmedNewName;
       saveChannels();
       io.emit('channel-updated', {
         id: channelId,
-        name: newName,
+        name: trimmedNewName,
         users: Array.from(channel.users),
         hasPassword: !!channel.password,
         owner: channel.owner,
@@ -521,6 +558,15 @@ function handleLeave(socket) {
 
       channel.users.delete(userId);
       if (screenShareStatus.has(channelId)) screenShareStatus.get(channelId).delete(userId);
+      // 清理输入状态
+      if (typingUsers.has(channelId)) {
+        const typeMap = typingUsers.get(channelId);
+        if (typeMap.has(userId)) {
+          clearTimeout(typeMap.get(userId));
+          typeMap.delete(userId);
+          socket.to(channelId).emit('typing-users', Array.from(typeMap.keys()));
+        }
+      }
 
       if (channel.users.size === 0) {
         // 频道为空，启动自动删除计时器

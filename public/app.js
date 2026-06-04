@@ -615,10 +615,7 @@ function openModal(modal) {
 
 function closeModal(modal) {
     modal.classList.add('hidden');
-    const input = modal.querySelector('input');
-    if (input) {
-        input.value = '';
-    }
+    modal.querySelectorAll('input').forEach(input => { input.value = ''; });
 }
 
 function login() {
@@ -1831,6 +1828,7 @@ function createPeerConnection(remoteUserName) {
                 peerConnections.delete(remoteUserName);
             }
             participants.delete(remoteUserName);
+            pendingCandidates.delete(remoteUserName);
             remoteAudioElements.forEach(audio => {
                 if (audio.id === 'remote-audio-' + remoteUserName) {
                     audio.srcObject = null;
@@ -1919,13 +1917,13 @@ function toggleScreenFullscreen() {
         if (video && document.pictureInPictureElement) {
             document.exitPictureInPicture().catch(() => {});
         }
-        if (video.webkitPresentationMode !== 'fullscreen') {
+        if (video && video.webkitPresentationMode !== 'fullscreen') {
             if (video.webkitEnterFullscreen) {
                 video.webkitEnterFullscreen();
             } else if (video.requestFullscreen) {
                 video.requestFullscreen();
             }
-        } else {
+        } else if (video) {
             if (document.webkitExitFullscreen) {
                 document.webkitExitFullscreen();
             }
@@ -1976,13 +1974,12 @@ socket.on('join-error', (msg) => {
             socket.emit('join-channel', { channelId: currentChannel.id, password: retryPwd });
             return;
         }
-        // 用户取消重试，清理状态
-        currentChannel = null;
-        document.body.style.cursor = '';
-        updateParticipantsDisplay();
-        updateChannelList();
-        return;
     }
+    // 清理未确认的频道状态（密码错误取消、或频道不存在等）
+    currentChannel = null;
+    document.body.style.cursor = '';
+    updateParticipantsDisplay();
+    updateChannelList();
     alert('加入频道失败: ' + msg);
 });
 
@@ -2052,6 +2049,9 @@ socket.on('user-disconnected', (remoteUserName) => {
             remoteAudioElements.delete(audio);
         }
     });
+    
+    // 清理待处理的 ICE 候选
+    pendingCandidates.delete(remoteUserName);
     
     // 清理屏幕共享流
     screenStreams.delete(remoteUserName);
