@@ -48,12 +48,17 @@ let viewingScreenOf = null; // 当前正在观看谁的屏幕
 const channelList = [];
 
 // 从服务端获取 ICE 配置
+// BUGFIX: R1 初始化默认 ICE 服务器，防止 fetch 未完成时 PeerConnection 无 STUN/TURN
 let configuration = {
     iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     iceTransportPolicy: 'all',
-    sdpSemantics: 'unified-plan'
+    sdpSemantics: 'unified-plan',
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]
 };
 
 fetch('/api/config')
@@ -1101,6 +1106,10 @@ function updateScreenShareBar() {
 })();
 
 async function joinChannel(channel) {
+    // BUGFIX: R7 防止重复加入（快速双击）
+    if (joiningChannel) return;
+    joiningChannel = true;
+
     // BUGFIX: C2/M6 手动加入频道时清除 pendingJoinChannel
     pendingJoinChannel = null;
     if (currentChannel) {
@@ -1121,6 +1130,7 @@ async function joinChannel(channel) {
             password = prompt(`请输入频道「${channel.name}」的密码：`);
             if (password === null) {
                 document.body.style.cursor = '';
+                joiningChannel = false; // BUGFIX: R7
                 return; // 用户取消
             }
         }
@@ -1143,6 +1153,7 @@ async function joinChannel(channel) {
         alert('加入频道失败');
     } finally {
         document.body.style.cursor = '';
+        joiningChannel = false; // BUGFIX: R7
     }
 }
 
@@ -1977,6 +1988,7 @@ socket.on('join-error', (msg) => {
     }
     // 清理未确认的频道状态（密码错误取消、或频道不存在等）
     currentChannel = null;
+    joiningChannel = false; // BUGFIX: R7
     document.body.style.cursor = '';
     updateParticipantsDisplay();
     updateChannelList();
@@ -2364,7 +2376,15 @@ function addChatMessage(data) {
     
     msgEl.appendChild(contentEl);
     chatMessages.appendChild(msgEl);
-    
+
+    // BUGFIX: R6 限制 DOM 中消息数量，防止内存无限增长
+    const MAX_DOM_MESSAGES = 200;
+    while (chatMessages.children.length > MAX_DOM_MESSAGES + 1) {
+        const first = chatMessages.children[0];
+        if (first.classList.contains('chat-empty')) break;
+        first.remove();
+    }
+
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
@@ -2446,4 +2466,80 @@ function openImageModal(imageUrl) {
 
     document.addEventListener('keydown', handleModalKeydown);
 }
+
+// ====== BUGFIX: R2/R3 Socket 重连 & 缺失事件处理 ======
+
+// R2: 断线重连后自动重新登录和加入频道
+socket.on('connect', () => {
+    if (userName) {
+        console.log('[R2] 重新连接，自动登录:', userName);
+        socket.emit('login', userName);
+        if (currentChannel) {
+            console.log('[R2] 尝试重新加入频道:', currentChannel.name);
+            socket.emit('join-channel', { channelId: currentChannel.id });
+        }
+    }
+});
+
+// R3: 被踢出频道时更新 UI
+socket.on('kicked', (data) => {
+    console.log('[R3] 被踢出频道:', data.channel);
+    alert(`你已被房主请出频道「${data.channel}」`);
+    if (currentChannel && currentChannel.name === data.channel) {
+        // 清理本地状态（不发送 leave-channel，服务器已处理）
+        if (screenSharing) stopScreenShare().catch(() => {});
+        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        if (screenStream) screenStream.getTracks().forEach(track => track.stop());
+        peerConnections.forEach(pc => pc.close());
+        peerConnections.clear();
+        participants.clear();
+        remoteAudioElements.forEach(audio => { audio.srcObject = null; audio.pause(); });
+        remoteAudioElements.clear();
+        pendingCandidates.clear();
+        screenStreams.clear();
+        viewingScreenOf = null;
+        currentScreenSharer = null;
+        audioTrack = null;
+        audioEnabled = false;
+        localStream = null;
+        screenStream = null;
+        currentChannel = null;
+        updateScreenShareBar();
+        remoteScreenVideo.srcObject = null;
+        showScreenShare(null);
+        room.classList.remove('chat-only');
+        if (toggleChatExpandBtn) toggleChatExpandBtn.classList.remove('active');
+        toggleAudioBtn.classList.remove('mic-active');
+        toggleVideoBtn.classList.remove('speaker-active');
+        toggleScreenShareBtn.classList.remove('screen-active');
+        currentChannelName.textContent = '选择一个频道';
+        updateParticipantsDisplay();
+        updateChannelList();
+    }
+});
+
+// R3: 聊天历史消息（加入频道时服务端发送）
+socket.on('chat-history', (messages) => {
+    if (messages && messages.length > 0) {
+        console.log('[R3] 收到聊天历史:', messages.length, '条');
+        messages.forEach(msg => addChatMessage(msg));
+    }
+});
+
+// R3: 频道被删除（你正在频道中时收到的实时通知）
+socket.on('channel-removed', (data) => {
+    console.log('[R3] 频道被删除:', data.reason);
+    if (currentChannel) {
+        alert('当前频道已被删除');
+        currentChannel = null;
+        participants.clear();
+        peerConnections.forEach(pc => pc.close());
+        peerConnections.clear();
+        updateParticipantsDisplay();
+        updateChannelList();
+    }
+});
+
+// ====== BUGFIX: R7 加入频道防重入标志 ======
+let joiningChannel = false;
 

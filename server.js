@@ -71,22 +71,23 @@ function debouncedSave() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
+    // BUGFIX: R8 仅在写入成功后才清除 dirty 标志，防止写失败丢数据
     if (channelsDirty) {
-      channelsDirty = false;
       try {
         const obj = {};
         channels.forEach((ch, id) => {
           obj[id] = { name: ch.name, password: ch.password, owner: ch.owner, createdAt: ch.createdAt, personTime: ch.personTime || 0 };
         });
         fs.writeFileSync(CHANNELS_FILE, JSON.stringify(obj, null, 2));
+        channelsDirty = false;
       } catch(e) { console.error('保存频道失败:', e); }
     }
     if (messagesDirty) {
-      messagesDirty = false;
       try {
         const obj = {};
         channelMessages.forEach((msgs, id) => { obj[id] = msgs; });
         fs.writeFileSync(MESSAGES_FILE, JSON.stringify(obj, null, 2));
+        messagesDirty = false;
       } catch(e) { console.error('保存消息失败:', e); }
     }
   }, 1000);
@@ -310,26 +311,29 @@ io.on('connection', (socket) => {
     if (!channel || channel.owner !== socket.username) return;
     if (targetUser === socket.username) return;
 
-    // 找到目标用户的 socket
+    // BUGFIX: R9 踢出目标用户的所有连接（多标签页场景）
     const sockets = io.sockets.sockets;
+    let kicked = false;
     for (const [id, s] of sockets) {
       if (s.userId === targetUser && s.currentChannel === channelId) {
         s.emit('kicked', { channel: channel.name });
         s.leave(channelId);
         s.currentChannel = null;
-        channel.users.delete(targetUser);
-        if (joinTimers.has(channelId)) joinTimers.get(channelId).delete(targetUser);
-        // 清理输入状态
-        if (typingUsers.has(channelId)) {
-          const typeMap = typingUsers.get(channelId);
-          if (typeMap.has(targetUser)) {
-            clearTimeout(typeMap.get(targetUser));
-            typeMap.delete(targetUser);
-          }
-        }
-        socket.to(channelId).emit('user-disconnected', targetUser);
-        break;
+        kicked = true;
       }
+    }
+    if (kicked) {
+      channel.users.delete(targetUser);
+      if (joinTimers.has(channelId)) joinTimers.get(channelId).delete(targetUser);
+      // 清理输入状态
+      if (typingUsers.has(channelId)) {
+        const typeMap = typingUsers.get(channelId);
+        if (typeMap.has(targetUser)) {
+          clearTimeout(typeMap.get(targetUser));
+          typeMap.delete(targetUser);
+        }
+      }
+      socket.to(channelId).emit('user-disconnected', targetUser);
     }
     io.emit('channel-updated', {
       id: channelId,
@@ -555,6 +559,23 @@ function handleLeave(socket) {
     const channel = channels.get(channelId);
 
     if (channel) {
+      // BUGFIX: R9 检查是否有同一用户的其他 socket 仍在频道中（多标签页场景）
+      let hasOtherSocket = false;
+      for (const [id, s] of io.sockets.sockets) {
+        if (id !== socket.id && s.userId === userId && s.currentChannel === channelId) {
+          hasOtherSocket = true;
+          break;
+        }
+      }
+
+      if (hasOtherSocket) {
+        // 另一标签页仍在频道中，只清理当前 socket，不移除用户
+        console.log(`用户 ${userId} 离开频道 ${channel.name} (${channelId})，但其他标签页仍在`);
+        socket.leave(channelId);
+        socket.currentChannel = null;
+        return;
+      }
+
       // 累计人时
       const timers = joinTimers.get(channelId);
       if (timers && timers.has(userId)) {
