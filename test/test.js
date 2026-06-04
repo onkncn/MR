@@ -347,9 +347,152 @@ async function runTests() {
   } catch (e) { fail('三人同频道', e.message); }
 
   // ─────────────────────────────────────
-  // 14. 清理测试数据 & 断开
+  // 14. 麦克风 & 扬声器状态
   // ─────────────────────────────────────
-  section('🧹 14. 清理 & 断开');
+  section('🎤 14. 麦克风 & 扬声器状态');
+
+  // 麦克风开启通知
+  try {
+    const status = waitFor(bob, 'audio-status');
+    alice.emit('audio-status', { enabled: true });
+    const data = await status;
+    if (data.user === 'Alice' && data.enabled === true) {
+      ok(`麦克风开启通知: Alice → enabled=${data.enabled}`);
+    } else {
+      fail('麦克风开启通知', `user=${data.user}, enabled=${data.enabled}`);
+    }
+  } catch (e) { fail('麦克风开启通知', e.message); }
+
+  // 麦克风关闭通知
+  try {
+    const status = waitFor(bob, 'audio-status');
+    alice.emit('audio-status', { enabled: false });
+    const data = await status;
+    if (data.user === 'Alice' && data.enabled === false) {
+      ok(`麦克风关闭通知: Alice → enabled=${data.enabled}`);
+    } else {
+      fail('麦克风关闭通知', `user=${data.user}, enabled=${data.enabled}`);
+    }
+  } catch (e) { fail('麦克风关闭通知', e.message); }
+
+  // 麦克风状态伪造防护
+  try {
+    const status = waitFor(alice, 'audio-status');
+    bob.emit('audio-status', { user: 'Alice', enabled: true }); // Bob 冒充 Alice
+    const data = await status;
+    if (data.user === 'Bob') {
+      ok(`麦克风状态伪造被拦截: Bob 冒充 Alice → user 仍为 "${data.user}"`);
+    } else {
+      fail('麦克风状态伪造防护', `user 被覆盖为 ${data.user}`);
+    }
+  } catch (e) { fail('麦克风状态伪造防护', e.message); }
+
+  // 说话状态通知
+  try {
+    const speaking = waitFor(bob, 'speaking-status');
+    alice.emit('speaking-status', { speaking: true });
+    const data = await speaking;
+    if (data.user === 'Alice' && data.speaking === true) {
+      ok(`说话状态通知: Alice → speaking=${data.speaking}`);
+    } else {
+      fail('说话状态通知', `user=${data.user}, speaking=${data.speaking}`);
+    }
+  } catch (e) { fail('说话状态通知', e.message); }
+
+  // 停止说话通知
+  try {
+    const speaking = waitFor(bob, 'speaking-status');
+    alice.emit('speaking-status', { speaking: false });
+    const data = await speaking;
+    if (data.user === 'Alice' && data.speaking === false) {
+      ok(`停止说话通知: Alice → speaking=${data.speaking}`);
+    } else {
+      fail('停止说话通知', `user=${data.user}, speaking=${data.speaking}`);
+    }
+  } catch (e) { fail('停止说话通知', e.message); }
+
+  // ─────────────────────────────────────
+  // 15. 屏幕共享状态
+  // ─────────────────────────────────────
+  section('🖥️ 15. 屏幕共享状态');
+
+  // 开始屏幕共享
+  try {
+    const status = waitFor(bob, 'screen-share-status');
+    alice.emit('screen-share-status', { user: 'Alice', sharing: true });
+    const data = await status;
+    if (data.user === 'Alice' && data.sharing === true) {
+      ok(`屏幕共享开启: Alice → sharing=${data.sharing}`);
+    } else {
+      fail('屏幕共享开启', `user=${data.user}, sharing=${data.sharing}`);
+    }
+  } catch (e) { fail('屏幕共享开启', e.message); }
+
+  // 停止屏幕共享
+  try {
+    const status = waitFor(bob, 'screen-share-status');
+    alice.emit('screen-share-status', { user: 'Alice', sharing: false });
+    const data = await status;
+    if (data.user === 'Alice' && data.sharing === false) {
+      ok(`屏幕共享停止: Alice → sharing=${data.sharing}`);
+    } else {
+      fail('屏幕共享停止', `user=${data.user}, sharing=${data.sharing}`);
+    }
+  } catch (e) { fail('屏幕共享停止', e.message); }
+
+  // 屏幕共享用户伪造防护
+  try {
+    const status = waitFor(alice, 'screen-share-status');
+    bob.emit('screen-share-status', { user: 'Alice', sharing: true }); // Bob 冒充 Alice
+    const data = await status;
+    if (data.user === 'Bob') {
+      ok(`屏幕共享伪造被拦截: Bob 冒充 Alice → user 仍为 "${data.user}"`);
+    } else {
+      fail('屏幕共享伪造防护', `user 被覆盖为 ${data.user}`);
+    }
+  } catch (e) { fail('屏幕共享伪造防护', e.message); }
+
+  // ─────────────────────────────────────
+  // 16. 频道管理员静音功能
+  // ─────────────────────────────────────
+  section('🔇 16. 频道管理员静音');
+
+  // Alice 是频道创建者，尝试静音 Bob
+  try {
+    const muted = waitFor(bob, 'user-muted');
+    alice.emit('mute-user', { channelId: privateChannelId, targetUser: 'Bob' });
+    const data = await muted;
+    if (data.user === 'Bob' && data.muted === true) {
+      ok(`管理员静音: Alice 静音 Bob → muted=${data.muted}`);
+    } else {
+      fail('管理员静音', `user=${data.user}, muted=${data.muted}`);
+    }
+  } catch (e) { fail('管理员静音', e.message); }
+
+  // 取消静音
+  try {
+    const unmuted = waitFor(bob, 'user-muted');
+    alice.emit('unmute-user', { channelId: privateChannelId, targetUser: 'Bob' });
+    const data = await unmuted;
+    if (data.user === 'Bob' && data.muted === false) {
+      ok(`取消静音: Alice 取消静音 Bob → muted=${data.muted}`);
+    } else {
+      fail('取消静音', `user=${data.user}, muted=${data.muted}`);
+    }
+  } catch (e) { fail('取消静音', e.message); }
+
+  // 非管理员不能静音
+  try {
+    bob.emit('mute-user', { channelId: privateChannelId, targetUser: 'Alice' }); // Bob 尝试静音 Alice
+    const rejected = await noEvent(alice, 'user-muted');
+    if (rejected) ok('非管理员静音被拒绝');
+    else fail('非管理员静音', '非管理员成功静音了别人');
+  } catch (e) { fail('非管理员静音', e.message); }
+
+  // ─────────────────────────────────────
+  // 17. 清理测试数据 & 断开
+  // ─────────────────────────────────────
+  section('🧹 17. 清理 & 断开');
 
   // 清理测试创建的频道
   try {
