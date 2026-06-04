@@ -106,6 +106,20 @@ const deleteTimers = new Map(); // channelId -> timeout handle
 const typingUsers = new Map(); // channelId -> Map<userId, timeout>
 const MAX_MESSAGES = 200; // 每频道最多存储消息数
 
+// 启动时为空频道恢复删除计时器（服务器重启后 deleteTimers 会丢失）
+for (const [channelId, channel] of channels) {
+  if (channel.users.size === 0) {
+    const delay = calcDeleteDelay(channel.personTime || 0);
+    console.log(`恢复空闲频道删除计时: ${channel.name} (${channelId}) → ${Math.round(delay/1000/60)} 分钟后删除`);
+    const timer = setTimeout(() => {
+      if (channels.has(channelId) && channels.get(channelId).users.size === 0) {
+        deleteChannel(channelId, channels.get(channelId));
+      }
+    }, delay);
+    deleteTimers.set(channelId, timer);
+  }
+}
+
 // 定期清理过期邀请令牌（每 10 分钟）
 setInterval(() => {
   const now = Date.now();
