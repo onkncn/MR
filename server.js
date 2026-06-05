@@ -25,6 +25,8 @@ const options = {
 const server = https.createServer(options, app);
 const io = new Server(server, {
   cors: config.cors,
+  // SO4: 50MB 上限，配合 S6 消息大小限制（文本 5KB，data URL 100KB），
+  // 保留余量给 WebRTC SDP（可达数 MB）和多条并发消息
   maxHttpBufferSize: 50 * 1024 * 1024
 });
 
@@ -106,6 +108,17 @@ const joinTimers = new Map();  // channelId -> Map<userId, joinTimestamp>
 const deleteTimers = new Map(); // channelId -> timeout handle
 const typingUsers = new Map(); // channelId -> Map<userId, timeout>
 const MAX_MESSAGES = 200; // 每频道最多存储消息数
+const MAX_TEXT_MESSAGE_LENGTH = 5000; // S6: 文本消息最大长度
+const MAX_DATA_MESSAGE_LENGTH = 100000; // S6: data URL 最大长度（图片/视频）
+
+// P1: 用户-连接索引，替代 O(n) 遍历
+const userSockets = new Map(); // username -> Set<socketId>
+
+// S2: 活跃用户名集合，防止同名冒充
+const activeUsernames = new Set();
+
+// S4: 速率限制
+const rateLimitMap = new Map(); // key -> { count, resetAt }
 
 // 启动时为空频道恢复删除计时器（服务器重启后 deleteTimers 会丢失）
 for (const [channelId, channel] of channels) {
@@ -155,6 +168,57 @@ function saveMessages() {
 
 const channelMessages = loadMessages();
 
+// ====== S5: 密码哈希与验证 ======
+function hashPassword(plainPassword) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(plainPassword, salt, 64).toString('hex');
+  return salt + ':' + hash;
+}
+
+function verifyPassword(plainPassword, stored) {
+  // 向后兼容：无冒号即为明文密码
+  if (!stored || stored.indexOf(':') === -1) {
+    return plainPassword === stored;
+  }
+  const [salt, hash] = stored.split(':');
+  const verify = crypto.scryptSync(plainPassword, salt, 64);
+  const hashBuf = Buffer.from(hash, 'hex');
+  if (verify.length !== hashBuf.length) return false;
+  return crypto.timingSafeEqual(verify, hashBuf);
+}
+
+// ====== S4: 速率限制 ======
+function checkRate(socket, eventName, maxPerMinute) {
+  const key = socket.id + ':' + eventName;
+  const now = Date.now();
+  let entry = rateLimitMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 60000 };
+    rateLimitMap.set(key, entry);
+  }
+  entry.count++;
+  return entry.count <= maxPerMinute;
+}
+
+// S3: 根据用户名查找目标 socket（单播用）
+function findSocketByUsername(username) {
+  const socketIds = userSockets.get(username);
+  if (!socketIds) return null;
+  for (const id of socketIds) {
+    const s = io.sockets.sockets.get(id);
+    if (s && s.username === username && s.currentChannel) return s;
+  }
+  return null;
+}
+
+// 定期清理过期的速率限制条目（每 5 分钟）
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 // ====== Socket.IO ======
 io.on('connection', (socket) => {
   console.log('用户连接:', socket.id);
@@ -163,7 +227,21 @@ io.on('connection', (socket) => {
     if (!username || typeof username !== 'string') return;
     const name = username.trim();
     if (name.length === 0 || name.length > 20) return;
+    // S2: 用户名去重防冒充 — 同一用户名已在线的连接会被拒绝（同一 socket 允许重登刷新）
+    if (activeUsernames.has(name) && socket.username !== name) {
+      socket.emit('login-error', '该用户名已在线，请换一个名字');
+      return;
+    }
+    // 同一 socket 重登：清理旧索引再重新注册
+    if (socket.username && socket.username !== name) {
+      const oldSockets = userSockets.get(socket.username);
+      if (oldSockets) { oldSockets.delete(socket.id); if (oldSockets.size === 0) { userSockets.delete(socket.username); activeUsernames.delete(socket.username); } }
+    }
     socket.username = name;
+    activeUsernames.add(name);
+    // P1: 维护用户-连接索引
+    if (!userSockets.has(name)) userSockets.set(name, new Set());
+    userSockets.get(name).add(socket.id);
     socket.emit('channel-list', Array.from(channels.entries()).map(([id, ch]) => ({
       id,
       name: ch.name,
@@ -178,17 +256,21 @@ io.on('connection', (socket) => {
   // 创建频道（支持密码）
   socket.on('create-channel', (data) => {
     if (!socket.username) return;
+    // S4: 速率限制 — 5次/分钟
+    if (!checkRate(socket, 'create-channel', 5)) return;
     const name = typeof data === 'string' ? data : data.name;
     if (!name || typeof name !== 'string') return;
     const trimmedName = name.trim();
     if (trimmedName.length === 0 || trimmedName.length > 30) return;
-    const password = typeof data === 'object' ? data.password : null;
+    const plainPassword = typeof data === 'object' ? data.password : null;
+    // S5: 密码哈希存储
+    const hashedPassword = plainPassword ? hashPassword(plainPassword) : null;
     const channelId = generateRoomId();
     channels.set(channelId, {
       id: channelId,
       name: trimmedName,
       users: new Set(),
-      password: password || null,
+      password: hashedPassword || null,
       owner: socket.username,
       createdAt: Date.now(),
       personTime: 0
@@ -198,7 +280,7 @@ io.on('connection', (socket) => {
       id: channelId,
       name: trimmedName,
       users: [],
-      hasPassword: !!password,
+      hasPassword: !!hashedPassword,
       owner: socket.username,
       personTime: 0,
       pendingDelete: false
@@ -208,19 +290,23 @@ io.on('connection', (socket) => {
   // 加入频道（密码验证）
   socket.on('join-channel', (data) => {
     if (!socket.username) return;
+    // S4: 速率限制 — 10次/分钟
+    if (!checkRate(socket, 'join-channel', 10)) return;
     const channelId = typeof data === 'string' ? data : data.channelId;
     const password = typeof data === 'object' ? data.password : undefined;
     const userId = socket.username;
     const channel = channels.get(channelId);
     if (!channel) return socket.emit('join-error', '频道不存在');
 
-    if (channel.password && channel.password !== password) {
+    // S5: 密码哈希验证（向后兼容明文密码）
+    if (channel.password && !verifyPassword(password || '', channel.password)) {
       return socket.emit('join-error', '密码错误');
     }
 
     socket.join(channelId);
     socket.currentChannel = channelId;
     socket.userId = userId;
+    socket._leaving = false; // SO2: 重置离开标志，允许后续正常离开
     channel.users.add(userId);
 
     // 记录加入时间
@@ -374,9 +460,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  // SO1: 重连后通知频道内其他用户重发 offer
+  socket.on('reconnect', () => {
+    if (socket.currentChannel && socket.userId) {
+      console.log(`用户 ${socket.userId} 重连到频道 ${socket.currentChannel}`);
+      socket.to(socket.currentChannel).emit('user-reconnected', socket.userId);
+    }
+  });
+
+  // S3: WebRTC 信令改单播 — 根据 data.to 找到目标 socket 单播
   socket.on('offer', (data) => {
     if (socket.currentChannel) {
       data.from = socket.userId;
+      if (data.to) {
+        const target = findSocketByUsername(data.to);
+        if (target) {
+          target.emit('offer', data);
+          return;
+        }
+      }
       socket.to(socket.currentChannel).emit('offer', data);
     }
   });
@@ -384,6 +486,13 @@ io.on('connection', (socket) => {
   socket.on('answer', (data) => {
     if (socket.currentChannel) {
       data.from = socket.userId;
+      if (data.to) {
+        const target = findSocketByUsername(data.to);
+        if (target) {
+          target.emit('answer', data);
+          return;
+        }
+      }
       socket.to(socket.currentChannel).emit('answer', data);
     }
   });
@@ -391,6 +500,13 @@ io.on('connection', (socket) => {
   socket.on('ice-candidate', (data) => {
     if (socket.currentChannel) {
       data.from = socket.userId;
+      if (data.to) {
+        const target = findSocketByUsername(data.to);
+        if (target) {
+          target.emit('ice-candidate', data);
+          return;
+        }
+      }
       socket.to(socket.currentChannel).emit('ice-candidate', data);
     }
   });
@@ -412,7 +528,24 @@ io.on('connection', (socket) => {
 
   socket.on('chat-message', (data) => {
     if (!socket.username || !socket.currentChannel) return;
-    if (!data || !data.message || data.message.length > 100000) return;
+    if (!data || !data.message) return;
+    // S4: 速率限制 — 30次/分钟
+    if (!checkRate(socket, 'chat-message', 30)) return;
+    // S6: 文本消息限制 5000 字符
+    if (data.type !== 'image' && data.type !== 'video' && data.message.length > MAX_TEXT_MESSAGE_LENGTH) return;
+    // S6: 过滤控制字符（保留换行）
+    if (data.type !== 'image' && data.type !== 'video') {
+      data.message = data.message.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+    }
+    // S1: 图片/视频消息必须是 data: URL
+    if (data.type === 'image' || data.type === 'video') {
+      if (!data.message.startsWith('data:')) return;
+      if (data.message.length > MAX_DATA_MESSAGE_LENGTH) return;
+    }
+    // 纯文本消息也检查长度兜底
+    if (!data.type || data.type === 'text') {
+      if (data.message.length > MAX_TEXT_MESSAGE_LENGTH) return;
+    }
     if (socket.currentChannel) {
       const msgId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
       const msg = { ...data, user: socket.username, id: msgId, reactions: {} };
@@ -521,8 +654,30 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // P1: 从用户索引中清理
+    if (socket.username) {
+      const sockets = userSockets.get(socket.username);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          userSockets.delete(socket.username);
+          // S2: 只有所有连接都断开才移除活跃用户名
+          activeUsernames.delete(socket.username);
+        }
+      }
+    }
     handleLeave(socket);
   });
+
+  // SO3: 全局错误处理日志
+  socket.on('error', (err) => {
+    console.error('Socket 错误 [' + (socket.username || socket.id) + ']:', err.message);
+  });
+});
+
+// SO3: 引擎级连接错误
+io.engine.on('connection_error', (err) => {
+  console.error('连接错误:', err.code, err.message, err.context);
 });
 
 // 计算自动删除延迟（基于累计人时）
@@ -553,6 +708,9 @@ function deleteChannel(channelId, channel) {
 }
 
 function handleLeave(socket) {
+  // SO2: 幂等保护 — 防止 disconnect 和 leave-channel 双触发
+  if (socket._leaving) return;
+  socket._leaving = true;
   if (socket.currentChannel && socket.userId) {
     const channelId = socket.currentChannel;
     const userId = socket.userId;

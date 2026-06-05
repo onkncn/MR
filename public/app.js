@@ -17,6 +17,20 @@ let micGainDest = null;
 let audioMixDest = null;  // 最终混合输出（麦克风 + 屏幕音频）
 const remoteAudioElements = new Set(); // 追踪远程音频元素
 
+// ====== C4: 常量定义 ======
+const DEBOUNCE_SAVE_MS = 1000;
+const MAX_TEXT_MESSAGE_LENGTH = 5000;
+const MAX_DATA_MESSAGE_LENGTH = 100000;
+const MAX_DOM_MESSAGES = 200;
+const CHAT_HISTORY_MAX = 500;
+
+// ====== C1: TODO — 全局变量封装到 AppState ======
+// 当前主要状态变量为全局作用域（~行3-50），后续可封装到 window.appState，
+// 使用 getter/setter 保持向后兼容。风险较高，暂不实施。
+// 涉及变量：localStream, audioTrack, screenStream, userName, currentChannel,
+// audioEnabled, denoiseEnabled, screenSharing, videoEnabled, currentScreenSharer,
+// participants, peerConnections, pendingCandidates, screenStreams, viewingScreenOf 等
+
 // ====== localStorage 持久化 ======
 function loadSavedState() {
     try {
@@ -49,6 +63,8 @@ const channelList = [];
 
 // 从服务端获取 ICE 配置
 // BUGFIX: R1 初始化默认 ICE 服务器，防止 fetch 未完成时 PeerConnection 无 STUN/TURN
+// W2: TURN 服务器占位 — 如需 NAT 穿透支持，部署 coturn 后在 config.json 的 iceServers 中添加：
+//   { urls: 'turn:你的域名:3478', username: '用户名', credential: '密码' }
 let configuration = {
     iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle',
@@ -145,6 +161,14 @@ let pendingImages = [];
 let chatMessagesList = [];
 let contextMenuChannel = null;
 let pendingJoinChannel = null; // BUGFIX: C2 存储待加入频道名
+let createToken = null; // BUGFIX: B6 创建频道令牌，用于确认是自己创建的频道
+
+// BUGFIX: B5 页面关闭时释放 AudioContext
+window.addEventListener('beforeunload', () => {
+    if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+    }
+});
 
 // 恢复保存的按钮状态
 if (typeof updateVideoButton === 'function') updateVideoButton();
@@ -155,6 +179,12 @@ if (userNameInput && userNameInput.value.trim()) {
 }
 
 // 初始化侧边栏状态
+// ====== C2: iOS 检测提取函数 ======
+function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 function initSidebar() {
     const isMobile = window.innerWidth <= 768;
     if (isMobile) {
@@ -405,7 +435,7 @@ function restoreScreenShare() {
     }
     screenShareContainer.classList.remove('hidden');
     if (remoteScreenVideo.paused && remoteScreenVideo.srcObject) {
-        remoteScreenVideo.play().catch(() => {});
+        remoteScreenVideo.play().catch(e => console.warn('[Media] play:', e.message || e));
         if (typeof showPlayOverlay === 'function') showPlayOverlay();
     }
 }
@@ -666,7 +696,7 @@ function logout() {
     if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
     if (micGainDest) { try { micGainDest.disconnect(); } catch(e) {} micGainDest = null; }
     if (audioMixDest) { try { audioMixDest.disconnect(); } catch(e) {} audioMixDest = null; }
-    if (audioContext && audioContext.state !== 'closed') { audioContext.close().catch(() => {}); audioContext = null; }
+    if (audioContext && audioContext.state !== 'closed') { audioContext.close().catch(e => console.warn('[Audio] close:', e.message || e)); audioContext = null; }
     
     // 清理媒体状态
     audioTrack = null;
@@ -1157,61 +1187,71 @@ async function joinChannel(channel) {
     }
 }
 
-async function leaveChannel() {
-    if (!currentChannel) return;
-    
-    if (screenSharing) {
-        await stopScreenShare();
-    }
-    
+// BUGFIX: C3 提取公共媒体清理函数，供 leaveChannel、kicked、channel-removed 复用
+function cleanupAllMedia() {
+    // 停止本地流
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
     }
-    
+    // 停止屏幕流
     if (screenStream) {
+        if (screenStream._audioSource) {
+            try { screenStream._audioSource.disconnect(audioMixDest); } catch(e) {}
+            screenStream._audioSource = null;
+        }
         screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
     }
-    
+    // 关闭所有 PeerConnection
     peerConnections.forEach(pc => pc.close());
     peerConnections.clear();
     participants.clear();
-    
-        // 清理远程音频元素
+    // 清理远程音频元素
     remoteAudioElements.forEach(audio => {
         audio.srcObject = null;
         audio.pause();
     });
     remoteAudioElements.clear();
-
-    // BUGFIX: M10 断开 Web Audio 节点（不关闭 audioContext，因为可能重用）
+    // 断开 Web Audio 节点（不关闭 audioContext，因为可能重用）
     if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
     if (micGainDest) { try { micGainDest.disconnect(); } catch(e) {} micGainDest = null; }
     if (audioMixDest) { try { audioMixDest.disconnect(); } catch(e) {} audioMixDest = null; }
-
-    // BUGFIX: H3 清理 pendingCandidates
+    // 清理其他状态
     pendingCandidates.clear();
+    screenStreams.clear();
+    audioTrack = null;
+    audioEnabled = false;
+    screenSharing = false;
+    viewingScreenOf = null;
+    currentScreenSharer = null;
+}
+
+async function leaveChannel() {
+    if (!currentChannel) return;
+
+    if (screenSharing) {
+        await stopScreenShare();
+    }
+
+    cleanupAllMedia();
 
     socket.emit('leave-channel');
-    
+
     currentChannel = null;
-    audioTrack = null;
-    audioEnabled = false; // 离开频道时麦克风关闭，下次加入时根据保存状态决定
-    currentScreenSharer = null;
-    viewingScreenOf = null;
-    screenStreams.clear();
     updateScreenShareBar();
     remoteScreenVideo.srcObject = null;
     showScreenShare(null);
-    
+
     // 退出聊天全屏模式
     room.classList.remove('chat-only');
     if (toggleChatExpandBtn) toggleChatExpandBtn.classList.remove('active');
-    
+
     // 重置按钮状态
     toggleAudioBtn.classList.remove('mic-active');
     toggleVideoBtn.classList.remove('speaker-active');
     toggleScreenShareBtn.classList.remove('screen-active');
-    
+
     currentChannelName.textContent = '选择一个频道';
     updateParticipantsDisplay();
     updateChannelList();
@@ -1227,9 +1267,12 @@ function createChannel() {
     const password = document.getElementById('newChannelPassword')?.value?.trim() || '';
 
     socket.emit('create-channel', { name: name, password: password });
-    // BUGFIX: C2 存储频道名，5秒超时自动清除
+    // BUGFIX: C2/B6 存储频道名和创建令牌，5秒超时自动清除
     pendingJoinChannel = name;
+    createToken = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    const thisToken = createToken;
     setTimeout(() => {
+        if (createToken === thisToken) createToken = null;
         if (pendingJoinChannel === name) pendingJoinChannel = null;
     }, 5000);
     closeModal(createModal);
@@ -1241,8 +1284,7 @@ async function toggleAudio() {
         return;
     }
     
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const iOS = isIOS();
     
     if (!audioTrack) {
         // 首次开麦，请求麦克风权限
@@ -1252,7 +1294,7 @@ async function toggleAudio() {
                 noiseSuppression: denoiseEnabled,
                 autoGainControl: true
             };
-            if (!isIOS) {
+            if (!iOS) {
                 audioConstraints.sampleRate = 48000;
                 audioConstraints.sampleSize = 16;
                 audioConstraints.channelCount = 1;
@@ -1266,7 +1308,7 @@ async function toggleAudio() {
             
             let sendTrack; // 实际发送给 PeerConnection 的音轨
             
-            if (isIOS) {
+            if (iOS) {
                 // iOS: 跳过 Web Audio API 管线，直接使用原生音轨
                 sendTrack = audioTrack;
                 console.log('[iOS] 直接使用原生麦克风音轨');
@@ -1311,7 +1353,8 @@ async function toggleAudio() {
                 if (audioSender) {
                     audioSender.replaceTrack(sendTrack).then(() => {
                         console.log('[Audio] replaceTrack 成功');
-                        renegotiate(pc, peerId);
+                        // BUGFIX: B1 renegotiate 错误处理
+                        renegotiate(pc, peerId).catch(e => console.warn('[WebRTC] renegotiate:', e.message || e));
                     }).catch(err => {
                         console.error('[Audio] replaceTrack 失败:', err);
                     });
@@ -1319,7 +1362,8 @@ async function toggleAudio() {
                     try {
                         pc.addTrack(sendTrack, localStream);
                         console.log('[Audio] addTrack 成功');
-                        renegotiate(pc, peerId);
+                        // BUGFIX: B1 renegotiate 错误处理
+                        renegotiate(pc, peerId).catch(e => console.warn('[WebRTC] renegotiate:', e.message || e));
                     } catch (err) {
                         console.error('[Audio] addTrack 失败:', err);
                     }
@@ -1370,8 +1414,7 @@ async function toggleDenoise() {
     denoiseEnabled = !denoiseEnabled;
     
     if (localStream && audioTrack) {
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const iOS = isIOS();
         try {
             // 重新获取音频流，切换降噪设置
             const audioConstraints = {
@@ -1379,7 +1422,7 @@ async function toggleDenoise() {
                 noiseSuppression: denoiseEnabled,
                 autoGainControl: true
             };
-            if (!isIOS) {
+            if (!iOS) {
                 audioConstraints.sampleRate = 48000;
                 audioConstraints.sampleSize = 16;
                 audioConstraints.channelCount = 1;
@@ -1400,7 +1443,7 @@ async function toggleDenoise() {
             
             let sendTrack;
             
-            if (isIOS) {
+            if (iOS) {
                 // iOS: 直接使用原生音轨
                 sendTrack = newTrack;
             } else {
@@ -1520,16 +1563,15 @@ async function toggleScreenShare() {
 
 async function startScreenShare() {
     try {
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const iOS = isIOS();
         const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         
-        if (isIOS && !isSafari) {
+        if (iOS && !isSafari) {
             alert('⚠️ iOS需要使用 Safari 浏览器\n\n请在 Safari 中打开此页面\n\n当前浏览器：' + navigator.userAgent.substring(0, 50));
             return;
         }
         
-        if (isIOS) {
+        if (iOS) {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
                 alert('❌ iOS不支持屏幕共享\n\n【原因】\niOS Safari和所有iOS浏览器都不支持 getDisplayMedia API，这是Apple的系统限制。\n\n【替代方案】\n1️⃣ 使用桌面电脑（Windows/Mac）进行屏幕共享\n2️⃣ 使用Android设备（支持Chrome）\n3️⃣ 使用腾讯会议、钉钉等原生App\n\n【开发建议】\n如需iOS屏幕共享，需要使用原生开发（React Native/Cordova），通过Native模块调用iOS的屏幕录制功能。');
                 return;
@@ -1546,7 +1588,7 @@ async function startScreenShare() {
             audio: true  // 请求屏幕音频（需要选择"标签页"共享才能捕获声音）
         };
         
-        if (!isIOS) {
+        if (!iOS) {
             constraints.video = {
                 cursor: 'always',
                 width: { ideal: 1920 },
@@ -1603,12 +1645,14 @@ async function startScreenShare() {
             if (videoSender) {
                 console.log('替换已有的视频轨道');
                 videoSender.replaceTrack(videoTracks[0]).then(() => {
-                    renegotiate(pc, peerId);
-                });
+                    // BUGFIX: B1 renegotiate 错误处理
+                    renegotiate(pc, peerId).catch(e => console.warn('[WebRTC] renegotiate:', e.message || e));
+                }).catch(e => console.warn('[WebRTC] replaceTrack:', e.message || e));
             } else {
                 console.log('添加新的视频轨道');
                 pc.addTrack(videoTracks[0], screenStream);
-                renegotiate(pc, peerId);
+                // BUGFIX: B1 renegotiate 错误处理
+                renegotiate(pc, peerId).catch(e => console.warn('[WebRTC] renegotiate:', e.message || e));
             }
             // 设置视频编码码率上限，提高画质
             const vSender = pc.getSenders().find(s => s.track?.kind === 'video');
@@ -1668,10 +1712,9 @@ async function startScreenShare() {
         console.error('错误名称:', err.name);
         console.error('错误信息:', err.message);
         
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const iOS = isIOS();
         
-        if (isIOS) {
+        if (iOS) {
             alert('❌ iOS屏幕录制失败\n\n📋 完整检查清单：\n1. ✅ 使用 Safari 浏览器\n2. ✅ 设置 → 控制中心，添加"屏幕录制"\n3. ✅ 访问 HTTPS 网址\n4. ✅ 点击共享后选择"整个屏幕"\n5. ✅ 点击"开始直播"\n6. ✅ 授予"屏幕录制"权限\n\n💡 错误: ' + (err.name || 'Unknown') + ' - ' + (err.message || ''));
         } else if (err.name === 'NotAllowedError') {
             alert('您拒绝了屏幕共享权限，请重试');
@@ -1740,11 +1783,21 @@ async function stopScreenShare() {
 }
 
 function createPeerConnection(remoteUserName) {
+    // BUGFIX: B2 创建新 PC 前先清理同名用户的旧音频元素
+    remoteAudioElements.forEach(audio => {
+        if (audio.id.startsWith('remote-audio-' + remoteUserName)) {
+            audio.srcObject = null;
+            audio.pause();
+            remoteAudioElements.delete(audio);
+        }
+    });
     const pc = new RTCPeerConnection(configuration);
     peerConnections.set(remoteUserName, pc);
     
-    // 始终确保音频收发通道存在
-    // 预创建 sendrecv transceiver，开麦时 replaceTrack 填充，不会产生重复 m-line
+    // BUGFIX: W3 统一音频收发器管理策略
+    // - addTrack: 已有麦克风/混合音轨时使用，创建 sender + transceiver，后续 replaceTrack 不产生新 m-line
+    // - addTransceiver: 未开麦时预创建 sendrecv transceiver，确保 SDP 中始终有音频 m-line
+    //   后续开麦时通过 replaceTrack 填充，避免 addTrack 产生重复 m-line（unified-plan 限制）
     const mixedTrack = audioMixDest ? audioMixDest.stream.getAudioTracks()[0] : null;
     if (mixedTrack && localStream) {
         pc.addTrack(mixedTrack, localStream);
@@ -1764,7 +1817,7 @@ function createPeerConnection(remoteUserName) {
                 if (!p.encodings || p.encodings.length === 0) p.encodings = [{}];
                 p.encodings[0].maxBitrate = 4_000_000;
                 p.encodings[0].maxFramerate = 60;
-                vSender.setParameters(p).catch(() => {});
+                vSender.setParameters(p).catch(e => console.warn('[WebRTC] setParameters:', e.message || e));
             }
             // 屏幕音频已通过 audioMixDest 混合到单条音轨中，无需单独发送
         }
@@ -1816,7 +1869,7 @@ function createPeerConnection(remoteUserName) {
             const audio = new Audio();
             audio.srcObject = stream;
             audio.muted = !videoEnabled;
-            audio.id = 'remote-audio-' + remoteUserName;
+            audio.id = 'remote-audio-' + remoteUserName + '-' + Date.now();
             // iOS Safari 拦截 autoplay，需要显式 play()
             audio.play().catch(err => {
                 console.warn('远程音频自动播放被阻止，等待用户交互:', err);
@@ -1831,6 +1884,17 @@ function createPeerConnection(remoteUserName) {
     
     pc.onconnectionstatechange = () => {
         console.log(`与 ${remoteUserName} 的连接状态:`, pc.connectionState);
+        // BUGFIX: W1 短暂断开时等待5秒后尝试 ICE 重启，而非直接放弃
+        if (pc.connectionState === 'disconnected') {
+            setTimeout(() => {
+                if (pc.connectionState === 'disconnected' && peerConnections.has(remoteUserName)) {
+                    console.log(`[W1] ${remoteUserName} 持续断开，尝试 ICE 重启`);
+                    pc.restartIce();
+                    createOfferAndSend(pc, remoteUserName).catch(e =>
+                        console.warn('[W1] ICE 重启后 offer 失败:', e.message || e));
+                }
+            }, 5000);
+        }
         // BUGFIX: M8 failed 状态清理 PC 和相关资源
         if (pc.connectionState === 'failed') {
             console.log(`[M8] ${remoteUserName} 连接失败，清理PC`);
@@ -1841,7 +1905,7 @@ function createPeerConnection(remoteUserName) {
             participants.delete(remoteUserName);
             pendingCandidates.delete(remoteUserName);
             remoteAudioElements.forEach(audio => {
-                if (audio.id === 'remote-audio-' + remoteUserName) {
+                if (audio.id.startsWith('remote-audio-' + remoteUserName)) {
                     audio.srcObject = null;
                     audio.pause();
                     remoteAudioElements.delete(audio);
@@ -1868,10 +1932,8 @@ function createPeerConnection(remoteUserName) {
 
 async function createOfferAndSend(pc, remoteUserName) {
     try {
-        const offer = await pc.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: true
-        });
+        // BUGFIX: W4 移除废弃的 offerToReceive 选项，由 addTransceiver 管理
+        const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         
         socket.emit('offer', {
@@ -1921,10 +1983,9 @@ async function renegotiate(pc, remoteUserName) {
 function toggleScreenFullscreen() {
     const container = document.getElementById('screenShareVideo');
     const video = document.getElementById('remoteScreenVideo');
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const iOS = isIOS();
     
-    if (isIOS) {
+    if (iOS) {
         if (video && document.pictureInPictureElement) {
             document.exitPictureInPicture().catch(() => {});
         }
@@ -2006,9 +2067,10 @@ socket.on('channel-created', (channel) => {
     console.log('频道创建:', channel);
     channelList.push(channel);
     updateChannelList();
-    // BUGFIX: C2 确认是自己创建的频道才加入
-    if (pendingJoinChannel && channel.name === pendingJoinChannel) {
+    // BUGFIX: C2/B6 通过名称和令牌双重确认是自己创建的频道
+    if (pendingJoinChannel && createToken && channel.name === pendingJoinChannel) {
         pendingJoinChannel = null;
+        createToken = null;
         joinChannel(channel);
     }
 });
@@ -2055,13 +2117,13 @@ socket.on('user-disconnected', (remoteUserName) => {
     
     // Clean up remote audio elements
     remoteAudioElements.forEach(audio => {
-        if (audio.id === 'remote-audio-' + remoteUserName) {
+        if (audio.id.startsWith('remote-audio-' + remoteUserName)) {
             audio.srcObject = null;
             audio.pause();
             remoteAudioElements.delete(audio);
         }
     });
-    
+
     // 清理待处理的 ICE 候选
     pendingCandidates.delete(remoteUserName);
     
@@ -2482,27 +2544,16 @@ socket.on('connect', () => {
 });
 
 // R3: 被踢出频道时更新 UI
-socket.on('kicked', (data) => {
+socket.on('kicked', async (data) => {
     console.log('[R3] 被踢出频道:', data.channel);
     alert(`你已被房主请出频道「${data.channel}」`);
     if (currentChannel && currentChannel.name === data.channel) {
         // 清理本地状态（不发送 leave-channel，服务器已处理）
-        if (screenSharing) stopScreenShare().catch(() => {});
-        if (localStream) localStream.getTracks().forEach(track => track.stop());
-        if (screenStream) screenStream.getTracks().forEach(track => track.stop());
-        peerConnections.forEach(pc => pc.close());
-        peerConnections.clear();
-        participants.clear();
-        remoteAudioElements.forEach(audio => { audio.srcObject = null; audio.pause(); });
-        remoteAudioElements.clear();
-        pendingCandidates.clear();
-        screenStreams.clear();
-        viewingScreenOf = null;
-        currentScreenSharer = null;
-        audioTrack = null;
-        audioEnabled = false;
-        localStream = null;
-        screenStream = null;
+        // BUGFIX: B4 先 await stopScreenShare 再继续清理
+        if (screenSharing) {
+            try { await stopScreenShare(); } catch(e) { console.warn('[WebRTC] stopScreenShare:', e.message || e); }
+        }
+        cleanupAllMedia();
         currentChannel = null;
         updateScreenShareBar();
         remoteScreenVideo.srcObject = null;
