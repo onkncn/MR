@@ -2383,18 +2383,21 @@ body {
         flex: 1;
         display: flex;
         flex-direction: row;
+        overflow: hidden;
     }
     
     .current-channel {
         flex: 1;
-        padding: 16px;
+        padding: 12px;
         display: flex;
         flex-direction: column;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
     }
     
     /* 横屏时聊天面板放在右侧 */
     .chat-panel {
-        width: 300px;
+        width: 280px;
         height: 100%;
         position: relative;
         bottom: auto;
@@ -2409,14 +2412,20 @@ body {
     }
     
     /* 横屏时底部控制栏更紧凑 */
-    .controls-bar {
+    .main-controls {
         padding: 8px 16px;
+        gap: 16px;
     }
     
     .control-btn {
-        width: 44px;
-        height: 44px;
-        padding: 10px;
+        width: 40px;
+        height: 40px;
+        padding: 8px;
+    }
+    
+    .control-btn svg {
+        width: 20px;
+        height: 20px;
     }
     
     /* 横屏时参与者列表横向滚动 */
@@ -2425,17 +2434,36 @@ body {
         flex-wrap: nowrap;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
-        padding: 8px 0;
-        gap: 12px;
+        padding: 6px 0;
+        gap: 8px;
     }
     
     .channel-participant-item {
         flex-shrink: 0;
     }
     
-    /* 横屏时屏幕共享比例调整 */
+    /* 横屏时屏幕共享区域自适应 */
+    .screen-share-container {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    
     .screen-share-wrapper {
-        aspect-ratio: 16/9;
+        flex: 1;
+        aspect-ratio: auto;
+        min-height: 120px;
+    }
+    
+    /* 横屏时频道头部更紧凑 */
+    .channel-header {
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+    }
+    
+    .channel-name-display {
+        font-size: 16px;
     }
     
     /* 横屏时隐藏侧边栏遮罩 */
@@ -2447,17 +2475,13 @@ body {
     .mobile-header {
         display: none;
     }
-    
-    .current-channel {
-        padding-top: 16px;
-    }
 }
 
 /* iPhone 横屏特定适配 */
 @supports (-webkit-touch-callout: none) {
     @media only screen and (max-width: 932px) and (orientation: landscape) {
         /* iPhone 底部安全区域 */
-        .controls-bar {
+        .main-controls {
             padding-bottom: max(8px, env(safe-area-inset-bottom));
         }
         
@@ -2468,6 +2492,10 @@ body {
         /* 确保不被刘海遮挡 */
         .sidebar-left {
             padding-top: env(safe-area-inset-top);
+        }
+        
+        .current-channel {
+            padding-top: max(12px, env(safe-area-inset-top));
         }
     }
 }
