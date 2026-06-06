@@ -170,6 +170,91 @@ window.addEventListener('beforeunload', () => {
     }
 });
 
+// BUGFIX: M9 移动端切换后台后恢复语音
+// 移动浏览器（尤其 iOS Safari）在页面进入后台时会暂停 AudioContext 和降低 WebRTC 优先级
+// 页面恢复可见时需要主动恢复
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!currentChannel) return; // 未在频道中，无需处理
+
+    console.log('[M9] 页面恢复可见，检查音频和连接状态');
+
+    // 1. 恢复 AudioContext（iOS Safari 后台会暂停）
+    if (audioContext && audioContext.state === 'suspended') {
+        try {
+            await audioContext.resume();
+            console.log('[M9] AudioContext 已恢复');
+        } catch (e) {
+            console.warn('[M9] AudioContext 恢复失败:', e.message || e);
+        }
+    }
+
+    // 2. 检查本地音轨状态
+    if (audioEnabled && audioTrack) {
+        if (audioTrack.readyState === 'ended') {
+            console.warn('[M9] 本地麦克风音轨已结束，尝试重新获取');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const newTrack = stream.getAudioTracks()[0];
+                // 替换所有 PeerConnection 中的音轨
+                peerConnections.forEach((pc) => {
+                    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+                    if (sender) {
+                        sender.replaceTrack(newTrack).catch(e =>
+                            console.warn('[M9] replaceTrack 失败:', e.message || e));
+                    }
+                });
+                audioTrack = newTrack;
+                if (localStream) {
+                    const oldTracks = localStream.getAudioTracks();
+                    oldTracks.forEach(t => localStream.removeTrack(t));
+                    localStream.addTrack(newTrack);
+                }
+                console.log('[M9] 麦克风音轨已重新获取');
+            } catch (e) {
+                console.error('[M9] 重新获取麦克风失败:', e.message || e);
+            }
+        }
+    }
+
+    // 3. 检查 PeerConnection 状态，尝试 ICE 重启
+    peerConnections.forEach((pc, peerId) => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            console.log(`[M9] ${peerId} 连接状态: ${pc.connectionState}，尝试 ICE 重启`);
+            if (pc.connectionState === 'failed') {
+                // failed 状态需要完全重建连接
+                pc.close();
+                peerConnections.delete(peerId);
+                participants.delete(peerId);
+                // 创建新的 PeerConnection 并发送 offer
+                console.log(`[M9] 重建与 ${peerId} 的连接`);
+                const newPc = createPeerConnection(peerId);
+                createOfferAndSend(newPc, peerId).catch(e =>
+                    console.warn('[M9] 重建连接 offer 失败:', e.message || e));
+            } else {
+                // disconnected 状态尝试 ICE 重启
+                pc.restartIce();
+                createOfferAndSend(pc, peerId).catch(e =>
+                    console.warn('[M9] ICE 重启 offer 失败:', e.message || e));
+            }
+        }
+    });
+
+    // 4. 检查 Socket.io 连接
+    if (!socket.connected) {
+        console.log('[M9] Socket.io 已断开，等待自动重连');
+        socket.connect();
+    }
+
+    // 5. 恢复远程音频播放（iOS Safari 后台会暂停）
+    remoteAudioElements.forEach(audio => {
+        if (audio.paused && !audio.muted) {
+            audio.play().catch(e =>
+                console.warn('[M9] 远程音频播放恢复失败:', e.message || e));
+        }
+    });
+});
+
 // 恢复保存的按钮状态
 if (typeof updateVideoButton === 'function') updateVideoButton();
 

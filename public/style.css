@@ -478,10 +478,42 @@ body {
     border-radius: 50%;
 }
 
-/* 移动端不显示频道内参与者行 */
+/* 移动端频道内参与者 - 改为紧凑横向布局 */
 @media (max-width: 768px) {
     .channel-participants {
-        display: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 0;
+    }
+    
+    .channel-participant-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        background: #2f3136;
+        border-radius: 16px;
+        font-size: 12px;
+    }
+    
+    .channel-participant-avatar {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+    }
+    
+    .channel-participant-name {
+        font-size: 12px;
+        max-width: 60px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .channel-participant-badge {
+        font-size: 10px;
+        padding: 2px 6px;
     }
 }
 
@@ -2324,5 +2356,118 @@ body {
     .chat-send-btn svg {
         width: 16px;
         height: 16px;
+    }
+}
+
+/* ========== 横屏适配 ========== */
+@media only screen and (max-width: 932px) and (orientation: landscape) {
+    /* 横屏模式：左右分栏布局 */
+    .app-container {
+        flex-direction: row;
+    }
+    
+    .sidebar-left {
+        width: 200px;
+        position: relative;
+        transform: none;
+        opacity: 1;
+        pointer-events: auto;
+    }
+    
+    .sidebar-left.closed {
+        transform: translateX(-100%);
+        position: absolute;
+    }
+    
+    .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+    }
+    
+    .current-channel {
+        flex: 1;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* 横屏时聊天面板放在右侧 */
+    .chat-panel {
+        width: 300px;
+        height: 100%;
+        position: relative;
+        bottom: auto;
+        left: auto;
+        right: auto;
+        border-radius: 12px;
+        border-left: 1px solid #202225;
+    }
+    
+    .chat-panel.hidden {
+        display: none;
+    }
+    
+    /* 横屏时底部控制栏更紧凑 */
+    .controls-bar {
+        padding: 8px 16px;
+    }
+    
+    .control-btn {
+        width: 44px;
+        height: 44px;
+        padding: 10px;
+    }
+    
+    /* 横屏时参与者列表横向滚动 */
+    .channel-participants {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 8px 0;
+        gap: 12px;
+    }
+    
+    .channel-participant-item {
+        flex-shrink: 0;
+    }
+    
+    /* 横屏时屏幕共享比例调整 */
+    .screen-share-wrapper {
+        aspect-ratio: 16/9;
+    }
+    
+    /* 横屏时隐藏侧边栏遮罩 */
+    .sidebar-overlay {
+        display: none;
+    }
+    
+    /* 横屏时移动端头部隐藏 */
+    .mobile-header {
+        display: none;
+    }
+    
+    .current-channel {
+        padding-top: 16px;
+    }
+}
+
+/* iPhone 横屏特定适配 */
+@supports (-webkit-touch-callout: none) {
+    @media only screen and (max-width: 932px) and (orientation: landscape) {
+        /* iPhone 底部安全区域 */
+        .controls-bar {
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+        }
+        
+        .chat-panel {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        /* 确保不被刘海遮挡 */
+        .sidebar-left {
+            padding-top: env(safe-area-inset-top);
+        }
     }
 }
