@@ -287,10 +287,20 @@ function initSidebar() {
 window.addEventListener('resize', () => {
     if (!room.classList.contains('hidden')) {
         const isMobile = window.innerWidth <= 768;
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches && isMobile;
+        
         if (!isMobile) {
+            // 桌面端：始终显示侧边栏
             sidebarOpen = true;
             sidebar.classList.remove('closed');
             sidebar.classList.add('open');
+            sidebarOverlay.classList.remove('active');
+        } else if (!isLandscape && sidebarOpen) {
+            // 竖屏移动端：关闭侧边栏（横屏切竖屏时）
+            sidebarOpen = false;
+            sidebar.classList.add('closed');
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('active');
         }
     }
 });
