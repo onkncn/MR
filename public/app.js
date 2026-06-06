@@ -304,10 +304,22 @@ window.addEventListener('resize', () => {
             sidebar.classList.add('closed');
             sidebar.classList.remove('open');
             sidebarOverlay.classList.remove('active');
+            // 清除横屏拖拽设置的内联样式，让移动端CSS生效
+            sidebar.style.width = '';
+            sidebar.style.minWidth = '';
+            sidebar.style.opacity = '';
+            sidebar.style.overflow = '';
             // 竖屏时聊天面板由移动端样式控制，重置状态
             chatPanelOpen = true;
             const chatPanel = document.getElementById('chatPanel');
-            if (chatPanel) chatPanel.classList.remove('hidden');
+            if (chatPanel) {
+                chatPanel.classList.remove('hidden');
+                // 清除横屏拖拽设置的内联样式，让移动端CSS生效
+                chatPanel.style.width = '';
+                chatPanel.style.minWidth = '';
+                chatPanel.style.opacity = '';
+                chatPanel.style.overflow = '';
+            }
         }
     }
 });
