@@ -290,17 +290,24 @@ window.addEventListener('resize', () => {
         const isLandscape = window.matchMedia('(orientation: landscape)').matches && isMobile;
         
         if (!isMobile) {
-            // 桌面端：始终显示侧边栏
+            // 桌面端：始终显示侧边栏和聊天面板
             sidebarOpen = true;
             sidebar.classList.remove('closed');
             sidebar.classList.add('open');
             sidebarOverlay.classList.remove('active');
+            chatPanelOpen = true;
+            const chatPanel = document.getElementById('chatPanel');
+            if (chatPanel) chatPanel.classList.remove('hidden');
         } else if (!isLandscape && sidebarOpen) {
             // 竖屏移动端：关闭侧边栏（横屏切竖屏时）
             sidebarOpen = false;
             sidebar.classList.add('closed');
             sidebar.classList.remove('open');
             sidebarOverlay.classList.remove('active');
+            // 竖屏时聊天面板由移动端样式控制，重置状态
+            chatPanelOpen = true;
+            const chatPanel = document.getElementById('chatPanel');
+            if (chatPanel) chatPanel.classList.remove('hidden');
         }
     }
 });
@@ -502,6 +509,53 @@ document.addEventListener('click', (e) => {
     }
 });
 sidebarToggle.addEventListener('click', toggleSidebar);
+
+// 横屏模式下的侧边栏和聊天面板切换
+const sidebarToggleLandscape = document.getElementById('sidebarToggleLandscape');
+const chatToggleLandscape = document.getElementById('chatToggleLandscape');
+let chatPanelOpen = true; // 聊天面板默认打开
+
+if (sidebarToggleLandscape) {
+    sidebarToggleLandscape.addEventListener('click', () => {
+        sidebarOpen = !sidebarOpen;
+        if (sidebarOpen) {
+            sidebar.classList.remove('closed');
+            sidebar.classList.add('open');
+        } else {
+            sidebar.classList.add('closed');
+            sidebar.classList.remove('open');
+        }
+    });
+}
+
+if (chatToggleLandscape) {
+    chatToggleLandscape.addEventListener('click', () => {
+        chatPanelOpen = !chatPanelOpen;
+        const chatPanel = document.getElementById('chatPanel');
+        if (chatPanel) {
+            if (chatPanelOpen) {
+                chatPanel.classList.remove('hidden');
+            } else {
+                chatPanel.classList.add('hidden');
+            }
+        }
+    });
+}
+
+// 检测横屏并更新按钮显示状态
+function updateLandscapeButtons() {
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches && window.innerWidth <= 932;
+    if (sidebarToggleLandscape) {
+        sidebarToggleLandscape.classList.toggle('hidden', !isLandscape);
+    }
+    if (chatToggleLandscape) {
+        chatToggleLandscape.classList.toggle('hidden', !isLandscape);
+    }
+}
+
+window.addEventListener('resize', updateLandscapeButtons);
+updateLandscapeButtons();
+
 screenFullscreenBtn.addEventListener('click', toggleScreenFullscreen);
 
 // 缩小/恢复屏幕共享浮窗（独立元素挂在body，兼容iOS）

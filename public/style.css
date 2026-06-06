@@ -736,10 +736,54 @@ body {
 .channel-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
     margin-bottom: 24px;
     padding-bottom: 16px;
     border-bottom: 1px solid #202225;
+}
+
+.channel-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* 横屏切换按钮基础样式 */
+.sidebar-toggle-landscape,
+.chat-toggle-landscape {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: #40444b;
+    color: #b9bbbe;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, color 0.2s;
+    flex-shrink: 0;
+}
+
+.sidebar-toggle-landscape:hover,
+.chat-toggle-landscape:hover {
+    background: #4f545c;
+    color: #dcddde;
+}
+
+.sidebar-toggle-landscape:active,
+.chat-toggle-landscape:active {
+    background: #5865f2;
+    color: white;
+}
+
+.sidebar-toggle-landscape svg,
+.chat-toggle-landscape svg {
+    width: 20px;
+    height: 20px;
 }
 
 .channel-icon {
@@ -2361,6 +2405,12 @@ body {
 
 /* ========== 横屏适配 - 参考桌面版三栏布局 ========== */
 @media only screen and (max-width: 932px) and (orientation: landscape) {
+    /* 显示横屏切换按钮 */
+    .sidebar-toggle-landscape,
+    .chat-toggle-landscape {
+        display: flex !important;
+    }
+    
     /* 横屏模式：复制桌面版三栏布局 */
     .room {
         display: flex;
@@ -2376,13 +2426,15 @@ body {
         opacity: 1;
         pointer-events: auto;
         flex-shrink: 0;
+        transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
     }
     
     .sidebar-left.closed {
-        transform: translateX(-100%);
-        position: absolute;
+        width: 0;
+        min-width: 0;
         opacity: 0;
         pointer-events: none;
+        overflow: hidden;
     }
     
     /* 主内容区：flex: 1 填充剩余空间 */
@@ -2412,10 +2464,15 @@ body {
         right: auto;
         flex-shrink: 0;
         border-left: 1px solid #202225;
+        transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
     }
     
     .chat-panel.hidden {
-        display: none;
+        display: flex;
+        width: 0;
+        min-width: 0;
+        opacity: 0;
+        overflow: hidden;
     }
     
     /* 控制栏：参考桌面版样式 */
@@ -2479,6 +2536,11 @@ body {
     }
     
     .mobile-header {
+        display: none;
+    }
+    
+    /* 隐藏 resize 手柄 */
+    .resize-handle-v {
         display: none;
     }
 }
