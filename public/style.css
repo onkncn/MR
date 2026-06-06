@@ -768,6 +768,14 @@ body {
     flex-shrink: 0;
 }
 
+/* 横屏模式强制显示切换按钮 */
+@media (orientation: landscape) and (max-width: 932px) {
+    .sidebar-toggle-landscape,
+    .chat-toggle-landscape {
+        display: flex !important;
+    }
+}
+
 .sidebar-toggle-landscape:hover,
 .chat-toggle-landscape:hover {
     background: #4f545c;
@@ -2405,12 +2413,6 @@ body {
 
 /* ========== 横屏适配 - 参考桌面版三栏布局 ========== */
 @media only screen and (max-width: 932px) and (orientation: landscape) {
-    /* 显示横屏切换按钮 */
-    .sidebar-toggle-landscape,
-    .chat-toggle-landscape {
-        display: flex !important;
-    }
-    
     /* 横屏模式：复制桌面版三栏布局 */
     .room {
         display: flex;
