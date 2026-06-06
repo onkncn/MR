@@ -582,10 +582,25 @@ if (screenPlayOverlay) {
 }
 
 // 点击视频区域 → 显示播放按钮（临时）
+const channelHeader = document.querySelector('.channel-header');
+let headerHidden = false;
+
 if (screenShareVideoEl) {
     screenShareVideoEl.addEventListener('click', (e) => {
         if (e.target.closest('.screen-fullscreen-btn')) return;
         if (e.target.closest('.screen-play-overlay')) return;
+        
+        // 移动端：点击切换频道名显示/隐藏
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile && channelHeader) {
+            headerHidden = !headerHidden;
+            if (headerHidden) {
+                channelHeader.classList.add('header-hidden');
+            } else {
+                channelHeader.classList.remove('header-hidden');
+            }
+        }
+        
         if (remoteScreenVideo.paused) {
             showPlayOverlay();
         } else {

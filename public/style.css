@@ -741,6 +741,19 @@ body {
     margin-bottom: 24px;
     padding-bottom: 16px;
     border-bottom: 1px solid #202225;
+    transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease;
+    overflow: hidden;
+    max-height: 100px;
+}
+
+/* 隐藏频道名状态 */
+.channel-header.header-hidden {
+    max-height: 0;
+    opacity: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom: none;
 }
 
 .channel-icon {
