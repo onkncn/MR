@@ -574,6 +574,28 @@ async function runTests() {
       fail('频道名隐藏功能', '未找到 header-hidden');
     }
     
+    // 横屏上滑手势功能
+    if (appJs.includes('initHeaderSwipeToggle')) {
+      ok('横屏上滑手势函数 initHeaderSwipeToggle 存在');
+    } else {
+      fail('横屏上滑手势函数', '未找到 initHeaderSwipeToggle');
+    }
+    
+    // 上滑阈值常量
+    if (appJs.includes('SWIPE_THRESHOLD')) {
+      ok('上滑阈值常量 SWIPE_THRESHOLD 存在');
+    } else {
+      fail('上滑阈值常量', '未找到 SWIPE_THRESHOLD');
+    }
+    
+    // 上滑隐藏逻辑
+    if (appJs.includes("channelHeader.classList.add('header-hidden')") &&
+        appJs.includes("channelHeader.classList.remove('header-hidden')")) {
+      ok('上滑隐藏/下滑恢复逻辑存在');
+    } else {
+      fail('上滑隐藏/下滑恢复逻辑', '未找到 add/remove header-hidden');
+    }
+    
   } catch (e) { fail('读取 app.js', e.message); }
 
   // 检查 style.css 是否包含关键样式
@@ -585,6 +607,22 @@ async function runTests() {
       ok('频道名隐藏样式 .header-hidden 存在');
     } else {
       fail('频道名隐藏样式', '未找到 .header-hidden');
+    }
+    
+    // 频道 header 过渡动画
+    if (styleCss.includes('.channel-header') && styleCss.includes('transition') && 
+        styleCss.includes('transform')) {
+      ok('频道 header 过渡动画样式存在');
+    } else {
+      fail('频道 header 过渡动画', '未找到 transition/transform');
+    }
+    
+    // header-hidden 高度归零
+    if (styleCss.includes('.channel-header.header-hidden') && 
+        styleCss.includes('height: 0')) {
+      ok('header-hidden 高度归零样式存在');
+    } else {
+      fail('header-hidden 高度归零', '未找到 height: 0');
     }
     
     // 屏幕共享自适应样式

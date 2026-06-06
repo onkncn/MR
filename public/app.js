@@ -312,6 +312,59 @@ window.addEventListener('resize', () => {
     }
 });
 
+// ====== 横屏上滑隐藏频道名 ======
+// 移动端横屏时，在中间屏幕区域上滑隐藏频道 header，下滑恢复
+(function initHeaderSwipeToggle() {
+    const mainContent = document.querySelector('.main-content');
+    const channelHeader = document.querySelector('.channel-header');
+    if (!mainContent || !channelHeader) return;
+
+    let startY = 0;
+    let startTarget = null;
+    const SWIPE_THRESHOLD = 30; // 最小滑动距离
+
+    mainContent.addEventListener('touchstart', (e) => {
+        // 仅在横屏移动端生效
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        const isMobile = window.innerWidth <= 932;
+        if (!isLandscape || !isMobile) return;
+
+        // 忽略控制栏和侧边栏区域的触摸
+        const target = e.target;
+        if (target.closest('.main-controls') || target.closest('.sidebar-left')) return;
+
+        startY = e.touches[0].clientY;
+        startTarget = target;
+    }, { passive: true });
+
+    mainContent.addEventListener('touchend', (e) => {
+        if (startY === 0) return;
+
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        const isMobile = window.innerWidth <= 932;
+        if (!isLandscape || !isMobile) {
+            startY = 0;
+            return;
+        }
+
+        const endY = e.changedTouches[0].clientY;
+        const deltaY = endY - startY;
+
+        if (Math.abs(deltaY) >= SWIPE_THRESHOLD) {
+            if (deltaY < 0) {
+                // 上滑 → 隐藏频道 header
+                channelHeader.classList.add('header-hidden');
+            } else {
+                // 下滑 → 显示频道 header
+                channelHeader.classList.remove('header-hidden');
+            }
+        }
+
+        startY = 0;
+        startTarget = null;
+    }, { passive: true });
+})();
+
 loginBtn.addEventListener('click', login);
 logoutBtn.addEventListener('click', logout);
 mobileLogoutBtn.addEventListener('click', logout);
