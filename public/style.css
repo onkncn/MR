@@ -2359,51 +2359,58 @@ body {
     }
 }
 
-/* ========== 横屏适配 ========== */
+/* ========== 横屏适配 - 参考桌面版三栏布局 ========== */
 @media only screen and (max-width: 932px) and (orientation: landscape) {
-    /* 横屏模式：左右分栏布局 */
-    .app-container {
+    /* 横屏模式：复制桌面版三栏布局 */
+    .room {
+        display: flex;
         flex-direction: row;
     }
     
+    /* 侧边栏：固定左侧，参考桌面版 */
     .sidebar-left {
         width: 200px;
+        min-width: 160px;
         position: relative;
         transform: none;
         opacity: 1;
         pointer-events: auto;
+        flex-shrink: 0;
     }
     
     .sidebar-left.closed {
         transform: translateX(-100%);
         position: absolute;
+        opacity: 0;
+        pointer-events: none;
     }
     
+    /* 主内容区：flex: 1 填充剩余空间 */
     .main-content {
         flex: 1;
         display: flex;
-        flex-direction: row;
-        overflow: hidden;
+        flex-direction: column;
+        min-width: 0;
     }
     
     .current-channel {
         flex: 1;
-        padding: 12px;
         display: flex;
         flex-direction: column;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
+        padding: 16px;
+        overflow: hidden;
     }
     
-    /* 横屏时聊天面板放在右侧 */
+    /* 聊天面板：固定右侧，参考桌面版 */
     .chat-panel {
         width: 280px;
+        min-width: 200px;
         height: 100%;
         position: relative;
         bottom: auto;
         left: auto;
         right: auto;
-        border-radius: 12px;
+        flex-shrink: 0;
         border-left: 1px solid #202225;
     }
     
@@ -2411,30 +2418,30 @@ body {
         display: none;
     }
     
-    /* 横屏时底部控制栏更紧凑 */
+    /* 控制栏：参考桌面版样式 */
     .main-controls {
-        padding: 8px 16px;
+        padding: 12px 16px;
         gap: 16px;
     }
     
     .control-btn {
-        width: 40px;
-        height: 40px;
-        padding: 8px;
+        width: 44px;
+        height: 44px;
+        padding: 10px;
     }
     
     .control-btn svg {
-        width: 20px;
-        height: 20px;
+        width: 22px;
+        height: 22px;
     }
     
-    /* 横屏时参与者列表横向滚动 */
+    /* 参与者列表横向滚动 */
     .channel-participants {
         display: flex;
         flex-wrap: nowrap;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
-        padding: 6px 0;
+        padding: 8px 0;
         gap: 8px;
     }
     
@@ -2442,7 +2449,7 @@ body {
         flex-shrink: 0;
     }
     
-    /* 横屏时屏幕共享区域自适应 */
+    /* 屏幕共享区域自适应 */
     .screen-share-container {
         flex: 1;
         min-height: 0;
@@ -2453,10 +2460,10 @@ body {
     .screen-share-wrapper {
         flex: 1;
         aspect-ratio: auto;
-        min-height: 120px;
+        min-height: 100px;
     }
     
-    /* 横屏时频道头部更紧凑 */
+    /* 频道头部紧凑 */
     .channel-header {
         margin-bottom: 12px;
         padding-bottom: 8px;
@@ -2466,12 +2473,11 @@ body {
         font-size: 16px;
     }
     
-    /* 横屏时隐藏侧边栏遮罩 */
+    /* 隐藏移动端专属元素 */
     .sidebar-overlay {
         display: none;
     }
     
-    /* 横屏时移动端头部隐藏 */
     .mobile-header {
         display: none;
     }
@@ -2482,7 +2488,7 @@ body {
     @media only screen and (max-width: 932px) and (orientation: landscape) {
         /* iPhone 底部安全区域 */
         .main-controls {
-            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
         }
         
         .chat-panel {
@@ -2495,7 +2501,7 @@ body {
         }
         
         .current-channel {
-            padding-top: max(12px, env(safe-area-inset-top));
+            padding-top: max(16px, env(safe-area-inset-top));
         }
     }
 }
