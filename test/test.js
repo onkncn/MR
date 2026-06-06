@@ -116,13 +116,15 @@ async function runTests() {
   // ─────────────────────────────────────
   section('📺 3. 创建频道');
 
-  let publicChannelId, privateChannelId;
+  let publicChannelId, privateChannelId, legalChannelId;
+  const createdChannelIds = []; // 记录所有创建的频道ID用于清理
 
   try {
     const created = waitFor(alice, 'channel-created');
     alice.emit('create-channel', { name: '公共测试频道', password: null });
     const ch = await created;
     publicChannelId = ch.id;
+    createdChannelIds.push(ch.id);
     if (ch.name === '公共测试频道' && !ch.hasPassword) {
       ok(`创建公共频道 "${ch.name}" (id: ${ch.id})`);
     } else {
@@ -135,6 +137,7 @@ async function runTests() {
     alice.emit('create-channel', { name: '私密测试频道', password: 'pass123' });
     const ch = await created;
     privateChannelId = ch.id;
+    createdChannelIds.push(ch.id);
     if (ch.name === '私密测试频道' && ch.hasPassword) {
       ok(`创建私密频道 "${ch.name}" (hasPassword: ${ch.hasPassword})`);
     } else {
@@ -168,6 +171,8 @@ async function runTests() {
     const created = waitFor(alice, 'channel-created');
     alice.emit('create-channel', { name: '合法频道', password: null });
     const ch = await created;
+    legalChannelId = ch.id;
+    createdChannelIds.push(ch.id);
     if (ch.name === '合法频道') ok('合法名称(30字符内)创建成功');
     else fail('合法名称创建', '名称不匹配');
   } catch (e) { fail('合法名称创建', e.message); }
@@ -494,24 +499,21 @@ async function runTests() {
   // ─────────────────────────────────────
   section('🧹 17. 清理 & 断开');
 
-  // 清理测试创建的频道
+  // 通过 socket 删除测试创建的频道
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const channelsFile = path.join(__dirname, '..', 'data', 'channels.json');
-    if (fs.existsSync(channelsFile)) {
-      const data = JSON.parse(fs.readFileSync(channelsFile, 'utf-8'));
-      const testNames = ['公共测试频道', '私密测试频道', '合法频道'];
-      let cleaned = 0;
-      const result = {};
-      for (const [id, ch] of Object.entries(data)) {
-        if (testNames.includes(ch.name)) { cleaned++; continue; }
-        result[id] = ch;
+    let cleaned = 0;
+    for (const channelId of createdChannelIds) {
+      try {
+        const deleted = waitFor(alice, 'channel-removed', 2000);
+        alice.emit('delete-channel', channelId);
+        await deleted;
+        cleaned++;
+      } catch (e) {
+        // 频道可能已经被删除或不存在，忽略错误
       }
-      fs.writeFileSync(channelsFile, JSON.stringify(result, null, 2));
-      if (cleaned > 0) ok(`清理 ${cleaned} 个测试频道`);
-      else ok('无测试频道需要清理');
     }
+    if (cleaned > 0) ok(`通过 socket 清理 ${cleaned} 个测试频道`);
+    else ok('无测试频道需要清理');
   } catch (e) { fail('清理测试频道', e.message); }
 
   alice.disconnect();
