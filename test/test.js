@@ -520,6 +520,138 @@ async function runTests() {
   ok('所有连接已断开');
 
   // ─────────────────────────────────────
+  // 18. 前端静态文件检查
+  // ─────────────────────────────────────
+  section('📄 18. 前端静态文件检查');
+
+  const fs = require('fs');
+  const path = require('path');
+  const publicDir = path.join(__dirname, '..', 'public');
+
+  // 检查 app.js 是否包含关键函数
+  try {
+    const appJs = fs.readFileSync(path.join(publicDir, 'app.js'), 'utf-8');
+    
+    // M9: visibilitychange 事件处理
+    if (appJs.includes("document.addEventListener('visibilitychange'")) {
+      ok('M9: visibilitychange 事件处理存在');
+    } else {
+      fail('M9: visibilitychange 事件处理', '未找到');
+    }
+    
+    // 面板滑动缩放函数
+    if (appJs.includes('function initPanelSwipeResize')) {
+      ok('面板滑动缩放函数 initPanelSwipeResize 存在');
+    } else {
+      fail('面板滑动缩放函数', '未找到 initPanelSwipeResize');
+    }
+    
+    // 边缘滑动检测
+    if (appJs.includes('EDGE_SWIPE_ZONE')) {
+      ok('边缘滑动检测常量 EDGE_SWIPE_ZONE 存在');
+    } else {
+      fail('边缘滑动检测', '未找到 EDGE_SWIPE_ZONE');
+    }
+    
+    // 隐藏阈值常量
+    if (appJs.includes('HIDE_THRESHOLD')) {
+      ok('隐藏阈值常量 HIDE_THRESHOLD 存在');
+    } else {
+      fail('隐藏阈值常量', '未找到 HIDE_THRESHOLD');
+    }
+    
+    // 方向锁定机制
+    if (appJs.includes('directionLocked')) {
+      ok('方向锁定机制 directionLocked 存在');
+    } else {
+      fail('方向锁定机制', '未找到 directionLocked');
+    }
+    
+    // 频道名隐藏功能
+    if (appJs.includes('header-hidden')) {
+      ok('频道名隐藏功能 header-hidden 存在');
+    } else {
+      fail('频道名隐藏功能', '未找到 header-hidden');
+    }
+    
+  } catch (e) { fail('读取 app.js', e.message); }
+
+  // 检查 style.css 是否包含关键样式
+  try {
+    const styleCss = fs.readFileSync(path.join(publicDir, 'style.css'), 'utf-8');
+    
+    // 频道名隐藏样式
+    if (styleCss.includes('.channel-header.header-hidden')) {
+      ok('频道名隐藏样式 .header-hidden 存在');
+    } else {
+      fail('频道名隐藏样式', '未找到 .header-hidden');
+    }
+    
+    // 屏幕共享自适应样式
+    if (styleCss.includes('.screen-share-wrapper') && styleCss.includes('flex: 1')) {
+      ok('屏幕共享自适应样式存在');
+    } else {
+      fail('屏幕共享自适应样式', '未找到 flex: 1');
+    }
+    
+    // 横屏布局样式
+    if (styleCss.includes('orientation: landscape')) {
+      ok('横屏布局媒体查询存在');
+    } else {
+      fail('横屏布局媒体查询', '未找到 orientation: landscape');
+    }
+    
+    // 移动端成员列表样式
+    if (styleCss.includes('.channel-participants') && styleCss.includes('flex-wrap: wrap')) {
+      ok('移动端成员列表横向布局存在');
+    } else {
+      fail('移动端成员列表样式', '未找到 flex-wrap: wrap');
+    }
+    
+    // resize handle 宽度
+    if (styleCss.includes('.resize-handle-v') && styleCss.includes('width: 12px')) {
+      ok('横屏 resize handle 宽度设置存在');
+    } else {
+      fail('横屏 resize handle 宽度', '未找到 width: 12px');
+    }
+    
+  } catch (e) { fail('读取 style.css', e.message); }
+
+  // 检查 index.html 是否包含关键元素
+  try {
+    const indexHtml = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
+    
+    // viewport-fit=cover
+    if (indexHtml.includes('viewport-fit=cover')) {
+      ok('viewport-fit=cover 设置存在');
+    } else {
+      fail('viewport-fit=cover', '未找到');
+    }
+    
+    // channel-header 结构
+    if (indexHtml.includes('class="channel-header"')) {
+      ok('channel-header 元素存在');
+    } else {
+      fail('channel-header 元素', '未找到');
+    }
+    
+    // screenShareContainer
+    if (indexHtml.includes('id="screenShareContainer"')) {
+      ok('screenShareContainer 元素存在');
+    } else {
+      fail('screenShareContainer 元素', '未找到');
+    }
+    
+    // participantsContainer
+    if (indexHtml.includes('id="participantsContainer"')) {
+      ok('participantsContainer 元素存在');
+    } else {
+      fail('participantsContainer 元素', '未找到');
+    }
+    
+  } catch (e) { fail('读取 index.html', e.message); }
+
+  // ─────────────────────────────────────
   // 结果
   // ─────────────────────────────────────
   printResults();
