@@ -2443,14 +2443,16 @@ body {
         display: flex;
         flex-direction: column;
         min-width: 0;
+        overflow: hidden;
     }
     
     .current-channel {
         flex: 1;
         display: flex;
         flex-direction: column;
-        padding: 16px;
+        padding: 12px;
         overflow: hidden;
+        min-width: 0;
     }
     
     /* 聊天面板：固定右侧，参考桌面版 */
@@ -2512,12 +2514,21 @@ body {
         min-height: 0;
         display: flex;
         flex-direction: column;
+        border-radius: 8px;
+        overflow: hidden;
     }
     
     .screen-share-wrapper {
         flex: 1;
         aspect-ratio: auto;
-        min-height: 100px;
+        min-height: 0;
+        position: relative;
+    }
+    
+    .screen-share-wrapper video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
     }
     
     /* 频道头部紧凑 */
