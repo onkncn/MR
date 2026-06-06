@@ -510,52 +510,6 @@ document.addEventListener('click', (e) => {
 });
 sidebarToggle.addEventListener('click', toggleSidebar);
 
-// 横屏模式下的侧边栏和聊天面板切换
-const sidebarToggleLandscape = document.getElementById('sidebarToggleLandscape');
-const chatToggleLandscape = document.getElementById('chatToggleLandscape');
-let chatPanelOpen = true; // 聊天面板默认打开
-
-if (sidebarToggleLandscape) {
-    sidebarToggleLandscape.addEventListener('click', () => {
-        sidebarOpen = !sidebarOpen;
-        if (sidebarOpen) {
-            sidebar.classList.remove('closed');
-            sidebar.classList.add('open');
-        } else {
-            sidebar.classList.add('closed');
-            sidebar.classList.remove('open');
-        }
-    });
-}
-
-if (chatToggleLandscape) {
-    chatToggleLandscape.addEventListener('click', () => {
-        chatPanelOpen = !chatPanelOpen;
-        const chatPanel = document.getElementById('chatPanel');
-        if (chatPanel) {
-            if (chatPanelOpen) {
-                chatPanel.classList.remove('hidden');
-            } else {
-                chatPanel.classList.add('hidden');
-            }
-        }
-    });
-}
-
-// 检测横屏并更新按钮显示状态
-function updateLandscapeButtons() {
-    const isLandscape = window.matchMedia('(orientation: landscape)').matches && window.innerWidth <= 932;
-    if (sidebarToggleLandscape) {
-        sidebarToggleLandscape.classList.toggle('hidden', !isLandscape);
-    }
-    if (chatToggleLandscape) {
-        chatToggleLandscape.classList.toggle('hidden', !isLandscape);
-    }
-}
-
-window.addEventListener('resize', updateLandscapeButtons);
-updateLandscapeButtons();
-
 screenFullscreenBtn.addEventListener('click', toggleScreenFullscreen);
 
 // 缩小/恢复屏幕共享浮窗（独立元素挂在body，兼容iOS）
@@ -703,15 +657,46 @@ function initResizeHandles() {
     const chatHandle = document.getElementById('chatResizeHandle');
     let isResizing = false;
     let currentHandle = null;
+    let startX = 0;
+    let startWidth = 0;
+    
+    // 隐藏阈值：拖到这个宽度以下就隐藏面板
+    const HIDE_THRESHOLD = 80;
+    // 边缘滑动检测区域宽度
+    const EDGE_SWIPE_ZONE = 20;
     
     const startResize = (handle, e) => {
         isResizing = true;
         currentHandle = handle;
+        startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+        
+        if (handle === sidebarHandle) {
+            startWidth = sidebar.offsetWidth;
+        } else if (handle === chatHandle) {
+            startWidth = chatPanel.offsetWidth;
+        }
+        
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
+        e.preventDefault();
     };
     
     const stopResize = () => {
+        if (!isResizing) return;
+        
+        // 检查是否需要隐藏面板
+        if (currentHandle === sidebarHandle && sidebar.offsetWidth < HIDE_THRESHOLD) {
+            sidebar.style.width = '0px';
+            sidebar.style.minWidth = '0px';
+            sidebar.style.opacity = '0';
+            sidebar.style.overflow = 'hidden';
+        } else if (currentHandle === chatHandle && chatPanel.offsetWidth < HIDE_THRESHOLD) {
+            chatPanel.style.width = '0px';
+            chatPanel.style.minWidth = '0px';
+            chatPanel.style.opacity = '0';
+            chatPanel.style.overflow = 'hidden';
+        }
+        
         isResizing = false;
         currentHandle = null;
         document.body.style.cursor = '';
@@ -721,35 +706,101 @@ function initResizeHandles() {
     const doResize = (e) => {
         if (!isResizing || !currentHandle) return;
         
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+        
         if (currentHandle === sidebarHandle) {
-            const newWidth = e.clientX;
-            const minWidth = 160;
-            const maxWidth = 400;
-            
-            if (newWidth >= minWidth && newWidth <= maxWidth) {
+            const newWidth = clientX;
+            if (newWidth >= 0 && newWidth <= 400) {
                 sidebar.style.width = newWidth + 'px';
+                sidebar.style.minWidth = newWidth > 0 ? newWidth + 'px' : '0px';
+                sidebar.style.opacity = newWidth > 0 ? '1' : '0';
+                sidebar.style.overflow = newWidth > 0 ? 'visible' : 'hidden';
             }
         } else if (currentHandle === chatHandle) {
-            const newWidth = window.innerWidth - e.clientX;
-            const minWidth = 200;
-            const maxWidth = 500;
-            
-            if (newWidth >= minWidth && newWidth <= maxWidth) {
+            const newWidth = window.innerWidth - clientX;
+            if (newWidth >= 0 && newWidth <= 500) {
                 chatPanel.style.width = newWidth + 'px';
+                chatPanel.style.minWidth = newWidth > 0 ? newWidth + 'px' : '0px';
+                chatPanel.style.opacity = newWidth > 0 ? '1' : '0';
+                chatPanel.style.overflow = newWidth > 0 ? 'visible' : 'hidden';
             }
         }
     };
     
+    // 鼠标事件
     if (sidebarHandle) {
         sidebarHandle.addEventListener('mousedown', (e) => startResize(sidebarHandle, e));
     }
-    
     if (chatHandle) {
         chatHandle.addEventListener('mousedown', (e) => startResize(chatHandle, e));
     }
-    
     document.addEventListener('mousemove', doResize);
     document.addEventListener('mouseup', stopResize);
+    
+    // 触摸事件（移动端）
+    if (sidebarHandle) {
+        sidebarHandle.addEventListener('touchstart', (e) => startResize(sidebarHandle, e), { passive: false });
+    }
+    if (chatHandle) {
+        chatHandle.addEventListener('touchstart', (e) => startResize(chatHandle, e), { passive: false });
+    }
+    document.addEventListener('touchmove', doResize, { passive: false });
+    document.addEventListener('touchend', stopResize);
+    
+    // 边缘滑动拉出面板
+    let edgeSwipeStartX = 0;
+    let edgeSwipeActive = false;
+    let edgeSwipeSide = null; // 'left' or 'right'
+    
+    document.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        
+        if (!isLandscape) return;
+        
+        // 左边缘检测：侧边栏隐藏时
+        if (touch.clientX < EDGE_SWIPE_ZONE && sidebar.offsetWidth === 0) {
+            edgeSwipeStartX = touch.clientX;
+            edgeSwipeActive = true;
+            edgeSwipeSide = 'left';
+        }
+        // 右边缘检测：聊天面板隐藏时
+        else if (touch.clientX > window.innerWidth - EDGE_SWIPE_ZONE && chatPanel.offsetWidth === 0) {
+            edgeSwipeStartX = touch.clientX;
+            edgeSwipeActive = true;
+            edgeSwipeSide = 'right';
+        }
+    }, { passive: true });
+    
+    document.addEventListener('touchmove', (e) => {
+        if (!edgeSwipeActive) return;
+        
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - edgeSwipeStartX;
+        
+        if (edgeSwipeSide === 'left' && deltaX > 0) {
+            // 从左边缘向右滑动：拉出侧边栏
+            const newWidth = Math.min(deltaX, 400);
+            sidebar.style.width = newWidth + 'px';
+            sidebar.style.minWidth = newWidth + 'px';
+            sidebar.style.opacity = '1';
+            sidebar.style.overflow = 'visible';
+            e.preventDefault();
+        } else if (edgeSwipeSide === 'right' && deltaX < 0) {
+            // 从右边缘向左滑动：拉出聊天面板
+            const newWidth = Math.min(-deltaX, 500);
+            chatPanel.style.width = newWidth + 'px';
+            chatPanel.style.minWidth = newWidth + 'px';
+            chatPanel.style.opacity = '1';
+            chatPanel.style.overflow = 'visible';
+            e.preventDefault();
+        }
+    }, { passive: false });
+    
+    document.addEventListener('touchend', () => {
+        edgeSwipeActive = false;
+        edgeSwipeSide = null;
+    });
 }
 
 initResizeHandles();

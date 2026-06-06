@@ -743,57 +743,6 @@ body {
     border-bottom: 1px solid #202225;
 }
 
-.channel-header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
-}
-
-/* 横屏切换按钮基础样式 */
-.sidebar-toggle-landscape,
-.chat-toggle-landscape {
-    width: 36px;
-    height: 36px;
-    border: none;
-    border-radius: 8px;
-    background: #40444b;
-    color: #b9bbbe;
-    cursor: pointer;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s, color 0.2s;
-    flex-shrink: 0;
-}
-
-/* 横屏模式强制显示切换按钮 */
-@media (orientation: landscape) and (max-width: 932px) {
-    .sidebar-toggle-landscape,
-    .chat-toggle-landscape {
-        display: flex !important;
-    }
-}
-
-.sidebar-toggle-landscape:hover,
-.chat-toggle-landscape:hover {
-    background: #4f545c;
-    color: #dcddde;
-}
-
-.sidebar-toggle-landscape:active,
-.chat-toggle-landscape:active {
-    background: #5865f2;
-    color: white;
-}
-
-.sidebar-toggle-landscape svg,
-.chat-toggle-landscape svg {
-    width: 20px;
-    height: 20px;
-}
-
 .channel-icon {
     width: 28px;
     height: 28px;
@@ -2552,9 +2501,14 @@ body {
         display: none;
     }
     
-    /* 隐藏 resize 手柄 */
+    /* 横屏时 resize 手柄更宽，方便触摸拖拽 */
     .resize-handle-v {
-        display: none;
+        width: 12px;
+        background: rgba(255,255,255,0.05);
+    }
+    
+    .resize-handle-v:hover {
+        background: rgba(88, 101, 242, 0.3);
     }
 }
 
