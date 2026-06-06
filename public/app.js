@@ -317,6 +317,7 @@ window.addEventListener('resize', () => {
 (function initHeaderSwipeToggle() {
     const mainContent = document.querySelector('.main-content');
     const channelHeader = document.querySelector('.channel-header');
+    console.log('[HeaderSwipe] 初始化:', { mainContent: !!mainContent, channelHeader: !!channelHeader });
     if (!mainContent || !channelHeader) return;
 
     let startY = 0;
@@ -335,6 +336,7 @@ window.addEventListener('resize', () => {
 
         startY = e.touches[0].clientY;
         startTarget = target;
+        console.log('[HeaderSwipe] touchstart:', { startY, target: target.className });
     }, { passive: true });
 
     mainContent.addEventListener('touchend', (e) => {
@@ -349,14 +351,17 @@ window.addEventListener('resize', () => {
 
         const endY = e.changedTouches[0].clientY;
         const deltaY = endY - startY;
+        console.log('[HeaderSwipe] touchend:', { startY, endY, deltaY, threshold: SWIPE_THRESHOLD });
 
         if (Math.abs(deltaY) >= SWIPE_THRESHOLD) {
             if (deltaY < 0) {
                 // 上滑 → 隐藏频道 header
                 channelHeader.classList.add('header-hidden');
+                console.log('[HeaderSwipe] 上滑隐藏频道 header');
             } else {
                 // 下滑 → 显示频道 header
                 channelHeader.classList.remove('header-hidden');
+                console.log('[HeaderSwipe] 下滑显示频道 header');
             }
         }
 
