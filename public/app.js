@@ -805,6 +805,89 @@ function initResizeHandles() {
 
 initResizeHandles();
 
+// 面板直接滑动缩放（在侧边栏/聊天面板上滑动）
+function initPanelSwipeResize() {
+    const isLandscape = () => window.matchMedia('(orientation: landscape)').matches;
+    
+    let swipeActive = false;
+    let swipeTarget = null; // 'sidebar' or 'chat'
+    let startX = 0;
+    let startWidth = 0;
+    
+    // 侧边栏左滑缩小
+    sidebar.addEventListener('touchstart', (e) => {
+        if (!isLandscape()) return;
+        if (sidebar.offsetWidth === 0) return;
+        
+        swipeActive = true;
+        swipeTarget = 'sidebar';
+        startX = e.touches[0].clientX;
+        startWidth = sidebar.offsetWidth;
+    }, { passive: true });
+    
+    // 聊天面板右滑缩小
+    chatPanel.addEventListener('touchstart', (e) => {
+        if (!isLandscape()) return;
+        if (chatPanel.offsetWidth === 0) return;
+        
+        swipeActive = true;
+        swipeTarget = 'chat';
+        startX = e.touches[0].clientX;
+        startWidth = chatPanel.offsetWidth;
+    }, { passive: true });
+    
+    document.addEventListener('touchmove', (e) => {
+        if (!swipeActive || !swipeTarget) return;
+        
+        const currentX = e.touches[0].clientX;
+        const deltaX = currentX - startX;
+        
+        if (swipeTarget === 'sidebar') {
+            // 侧边栏：左滑缩小（deltaX < 0）
+            const newWidth = Math.max(0, startWidth + deltaX);
+            if (newWidth <= 400) {
+                sidebar.style.width = newWidth + 'px';
+                sidebar.style.minWidth = newWidth > 0 ? newWidth + 'px' : '0px';
+                sidebar.style.opacity = newWidth > 0 ? '1' : '0';
+                sidebar.style.overflow = newWidth > 0 ? 'visible' : 'hidden';
+                e.preventDefault();
+            }
+        } else if (swipeTarget === 'chat') {
+            // 聊天面板：右滑缩小（deltaX > 0）
+            const newWidth = Math.max(0, startWidth - deltaX);
+            if (newWidth <= 500) {
+                chatPanel.style.width = newWidth + 'px';
+                chatPanel.style.minWidth = newWidth > 0 ? newWidth + 'px' : '0px';
+                chatPanel.style.opacity = newWidth > 0 ? '1' : '0';
+                chatPanel.style.overflow = newWidth > 0 ? 'visible' : 'hidden';
+                e.preventDefault();
+            }
+        }
+    }, { passive: false });
+    
+    document.addEventListener('touchend', () => {
+        if (!swipeActive) return;
+        
+        // 检查是否需要完全隐藏
+        if (swipeTarget === 'sidebar' && sidebar.offsetWidth < 80) {
+            sidebar.style.width = '0px';
+            sidebar.style.minWidth = '0px';
+            sidebar.style.opacity = '0';
+            sidebar.style.overflow = 'hidden';
+        } else if (swipeTarget === 'chat' && chatPanel.offsetWidth < 80) {
+            chatPanel.style.width = '0px';
+            chatPanel.style.minWidth = '0px';
+            chatPanel.style.opacity = '0';
+            chatPanel.style.overflow = 'hidden';
+        }
+        
+        swipeActive = false;
+        swipeTarget = null;
+    });
+}
+
+initPanelSwipeResize();
+
 function toggleSidebar() {
     sidebarOpen = !sidebarOpen;
     const isMobile = window.innerWidth <= 768;
