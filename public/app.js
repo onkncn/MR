@@ -812,7 +812,11 @@ function initPanelSwipeResize() {
     let swipeActive = false;
     let swipeTarget = null; // 'sidebar' or 'chat'
     let startX = 0;
+    let startY = 0;
     let startWidth = 0;
+    let directionLocked = false;
+    let isHorizontal = false;
+    const DIRECTION_THRESHOLD = 10; // 滑动多少像素后判断方向
     
     // 侧边栏左滑缩小
     sidebar.addEventListener('touchstart', (e) => {
@@ -822,7 +826,10 @@ function initPanelSwipeResize() {
         swipeActive = true;
         swipeTarget = 'sidebar';
         startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
         startWidth = sidebar.offsetWidth;
+        directionLocked = false;
+        isHorizontal = false;
     }, { passive: true });
     
     // 聊天面板右滑缩小
@@ -833,14 +840,31 @@ function initPanelSwipeResize() {
         swipeActive = true;
         swipeTarget = 'chat';
         startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
         startWidth = chatPanel.offsetWidth;
+        directionLocked = false;
+        isHorizontal = false;
     }, { passive: true });
     
     document.addEventListener('touchmove', (e) => {
         if (!swipeActive || !swipeTarget) return;
         
         const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
         const deltaX = currentX - startX;
+        const deltaY = currentY - startY;
+        
+        // 方向锁定：滑动超过阈值后判断方向
+        if (!directionLocked) {
+            if (Math.abs(deltaX) > DIRECTION_THRESHOLD || Math.abs(deltaY) > DIRECTION_THRESHOLD) {
+                directionLocked = true;
+                isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
+            }
+            return; // 等待方向确定
+        }
+        
+        // 如果是垂直滑动，不处理（让浏览器处理滚动）
+        if (!isHorizontal) return;
         
         if (swipeTarget === 'sidebar') {
             // 侧边栏：左滑缩小（deltaX < 0）
@@ -868,21 +892,25 @@ function initPanelSwipeResize() {
     document.addEventListener('touchend', () => {
         if (!swipeActive) return;
         
-        // 检查是否需要完全隐藏
-        if (swipeTarget === 'sidebar' && sidebar.offsetWidth < 80) {
-            sidebar.style.width = '0px';
-            sidebar.style.minWidth = '0px';
-            sidebar.style.opacity = '0';
-            sidebar.style.overflow = 'hidden';
-        } else if (swipeTarget === 'chat' && chatPanel.offsetWidth < 80) {
-            chatPanel.style.width = '0px';
-            chatPanel.style.minWidth = '0px';
-            chatPanel.style.opacity = '0';
-            chatPanel.style.overflow = 'hidden';
+        // 只有水平滑动时才检查是否需要完全隐藏
+        if (isHorizontal) {
+            if (swipeTarget === 'sidebar' && sidebar.offsetWidth < 80) {
+                sidebar.style.width = '0px';
+                sidebar.style.minWidth = '0px';
+                sidebar.style.opacity = '0';
+                sidebar.style.overflow = 'hidden';
+            } else if (swipeTarget === 'chat' && chatPanel.offsetWidth < 80) {
+                chatPanel.style.width = '0px';
+                chatPanel.style.minWidth = '0px';
+                chatPanel.style.opacity = '0';
+                chatPanel.style.overflow = 'hidden';
+            }
         }
         
         swipeActive = false;
         swipeTarget = null;
+        directionLocked = false;
+        isHorizontal = false;
     });
 }
 
