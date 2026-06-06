@@ -2559,22 +2559,18 @@ body {
 /* iPhone 横屏特定适配 */
 @supports (-webkit-touch-callout: none) {
     @media only screen and (max-width: 932px) and (orientation: landscape) {
-        /* iPhone 底部安全区域 */
+        /* iPhone 底部安全区域（横屏时手势条在底部） */
         .main-controls {
-            padding-bottom: max(12px, env(safe-area-inset-bottom));
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
         }
         
         .chat-panel {
             padding-bottom: env(safe-area-inset-bottom);
         }
         
-        /* 确保不被刘海遮挡 */
-        .sidebar-left {
-            padding-top: env(safe-area-inset-top);
-        }
-        
+        /* 横屏时刘海在侧面，顶部不需要额外 padding */
         .current-channel {
-            padding-top: max(16px, env(safe-area-inset-top));
+            padding-top: 8px;
         }
     }
 }
