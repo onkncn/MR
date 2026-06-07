@@ -1000,10 +1000,8 @@ initResizeHandles();
         const isPortraitMobile = window.innerWidth <= 768 
             && !matchMedia('(orientation: landscape)').matches;
         
-        // 竖屏移动端：聊天面板固定底部无法隐藏，只需侧边栏收起
-        if (isPortraitMobile) {
-            return sidebarClosed;
-        }
+        // 竖屏移动端不启用自动隐藏
+        if (isPortraitMobile) return false;
         
         // 桌面端/横屏移动端：侧边栏和聊天面板都需要收起
         const chatStyle = getComputedStyle(chatPanel);

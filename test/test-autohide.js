@@ -169,27 +169,48 @@ async function testAutoHide(page, label) {
                 || sidebar.offsetWidth <= 1 
                 || (ss.opacity === '0' && ss.pointerEvents === 'none');
             const isPM = window.innerWidth <= 768 && !matchMedia('(orientation: landscape)').matches;
-            if (isPM) return sidebarClosed;
+            if (isPM) return false; // 竖屏不启用
             const cs = getComputedStyle(chatPanel);
             const chatHidden = chatPanel.classList.contains('hidden') 
                 || chatPanel.offsetWidth <= 1 
                 || (cs.opacity === '0' && cs.pointerEvents === 'none');
             return sidebarClosed && chatHidden;
         });
-        if (isFullScreen) ok(`${label} 全屏模式检测成功`);
-        else fail(`${label} 全屏模式检测`, '未进入全屏模式');
+        
+        const isPortraitMobile = await page.evaluate(() => 
+            window.innerWidth <= 768 && !matchMedia('(orientation: landscape)').matches
+        );
+        
+        if (isPortraitMobile) {
+            if (!isFullScreen) ok(`${label} 竖屏不进入全屏模式（符合预期）`);
+            else fail(`${label} 竖屏不应进入全屏模式`, '');
+        } else {
+            if (isFullScreen) ok(`${label} 全屏模式检测成功`);
+            else fail(`${label} 全屏模式检测`, '未进入全屏模式');
+        }
     } catch (e) { fail(`${label} 全屏模式检测`, e.message); }
 
-    // 5.5 等待 1 秒后检查自动隐藏
+    // 5.5 检查自动隐藏行为
     try {
+        const isPortraitMobile = await page.evaluate(() => 
+            window.innerWidth <= 768 && !matchMedia('(orientation: landscape)').matches
+        );
+        
         await page.mouse.move(200, 200);
         await sleep(100);
         await page.mouse.move(210, 210);
         await sleep(1500);
         const controlsOpacity = await page.$eval('.main-controls', el => parseFloat(getComputedStyle(el).opacity));
         console.log(`    [DEBUG] after 1.5s: controls=${controlsOpacity}`);
-        if (controlsOpacity < 0.1) ok(`${label} ✅ 自动隐藏成功（1秒后隐藏）`);
-        else fail(`${label} 自动隐藏`, `controls opacity: ${controlsOpacity}`);
+        
+        if (isPortraitMobile) {
+            // 竖屏不应隐藏
+            if (controlsOpacity > 0.9) ok(`${label} 竖屏不自动隐藏（符合预期）`);
+            else fail(`${label} 竖屏不应隐藏`, `controls opacity: ${controlsOpacity}`);
+        } else {
+            if (controlsOpacity < 0.1) ok(`${label} ✅ 自动隐藏成功（1秒后隐藏）`);
+            else fail(`${label} 自动隐藏`, `controls opacity: ${controlsOpacity}`);
+        }
     } catch (e) { fail(`${label} 自动隐藏检查`, e.message); }
 
     // 5.6 触碰后重新显示
