@@ -801,6 +801,8 @@ function initResizeHandles() {
             sidebar.style.minWidth = '0px';
             sidebar.style.opacity = '0';
             sidebar.style.overflow = 'hidden';
+            sidebar.classList.add('closed');
+            sidebar.classList.remove('open');
         } else if (currentHandle === chatHandle && chatPanel.offsetWidth < HIDE_THRESHOLD) {
             chatPanel.style.width = '0px';
             chatPanel.style.minWidth = '0px';
@@ -988,8 +990,26 @@ initResizeHandles();
     function isFullScreenMode() {
         const sidebar = document.querySelector('.sidebar-left');
         const chatPanel = document.getElementById('chatPanel');
-        const sidebarClosed = sidebar && sidebar.classList.contains('closed');
-        const chatHidden = chatPanel && (chatPanel.classList.contains('hidden') || chatPanel.offsetWidth === 0);
+        if (!sidebar || !chatPanel) return false;
+        
+        const sidebarStyle = getComputedStyle(sidebar);
+        const sidebarClosed = sidebar.classList.contains('closed') 
+            || sidebar.offsetWidth <= 1 
+            || (sidebarStyle.opacity === '0' && sidebarStyle.pointerEvents === 'none');
+        
+        const isPortraitMobile = window.innerWidth <= 768 
+            && !matchMedia('(orientation: landscape)').matches;
+        
+        // 竖屏移动端：聊天面板固定底部无法隐藏，只需侧边栏收起
+        if (isPortraitMobile) {
+            return sidebarClosed;
+        }
+        
+        // 桌面端/横屏移动端：侧边栏和聊天面板都需要收起
+        const chatStyle = getComputedStyle(chatPanel);
+        const chatHidden = chatPanel.classList.contains('hidden') 
+            || chatPanel.offsetWidth <= 1 
+            || (chatStyle.opacity === '0' && chatStyle.pointerEvents === 'none');
         return sidebarClosed && chatHidden;
     }
     
@@ -1020,11 +1040,11 @@ initResizeHandles();
         }
     }
     
-    // 监听触碰和鼠标活动
-    mainContent.addEventListener('touchstart', resetHideTimer, { passive: true });
-    mainContent.addEventListener('touchmove', resetHideTimer, { passive: true });
-    mainContent.addEventListener('mousemove', resetHideTimer, { passive: true });
-    mainContent.addEventListener('click', resetHideTimer, { passive: true });
+    // 监听触碰和鼠标活动（绑定到document，覆盖整个页面）
+    document.addEventListener('touchstart', resetHideTimer, { passive: true });
+    document.addEventListener('touchmove', resetHideTimer, { passive: true });
+    document.addEventListener('mousemove', resetHideTimer, { passive: true });
+    document.addEventListener('click', resetHideTimer, { passive: true });
     
     // 监听侧边栏和聊天面板状态变化
     const observer = new MutationObserver(() => {
@@ -1038,7 +1058,7 @@ initResizeHandles();
     
     const sidebar = document.querySelector('.sidebar-left');
     const chatPanel = document.getElementById('chatPanel');
-    if (sidebar) observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    if (sidebar) observer.observe(sidebar, { attributes: true, attributeFilter: ['class', 'style'] });
     if (chatPanel) observer.observe(chatPanel, { attributes: true, attributeFilter: ['class', 'style'] });
 })();
 

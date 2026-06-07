@@ -2563,6 +2563,7 @@ body {
     
     /* 横屏时 resize 手柄更宽，方便触摸拖拽 */
     .resize-handle-v {
+        display: flex;
         width: 12px;
         background: rgba(255,255,255,0.05);
     }
