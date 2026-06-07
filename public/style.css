@@ -2565,5 +2565,10 @@ body {
         .current-channel {
             padding-top: 8px;
         }
+        
+        /* iOS 横屏时隐藏频道名 */
+        .channel-header {
+            display: none;
+        }
     }
 }
