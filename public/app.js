@@ -973,6 +973,75 @@ initResizeHandles();
     });
 })();
 
+// ====== 全屏模式自动隐藏 UI ======
+// 当侧边栏和聊天面板都收起时，1秒无触碰后自动隐藏顶部手柄和底部控制栏
+(function initAutoHideUI() {
+    const mainContent = document.querySelector('.main-content');
+    const controls = document.querySelector('.main-controls');
+    const dragHandle = document.getElementById('headerDragHandle');
+    if (!mainContent || !controls || !dragHandle) return;
+    
+    let hideTimer = null;
+    let isHidden = false;
+    const HIDE_DELAY = 1000; // 1秒
+    
+    function isFullScreenMode() {
+        const sidebar = document.querySelector('.sidebar-left');
+        const chatPanel = document.getElementById('chatPanel');
+        const sidebarClosed = sidebar && sidebar.classList.contains('closed');
+        const chatHidden = chatPanel && (chatPanel.classList.contains('hidden') || chatPanel.offsetWidth === 0);
+        return sidebarClosed && chatHidden;
+    }
+    
+    function showUI() {
+        if (!isHidden) return;
+        controls.style.opacity = '1';
+        controls.style.pointerEvents = 'auto';
+        dragHandle.style.opacity = '1';
+        dragHandle.style.pointerEvents = 'auto';
+        isHidden = false;
+    }
+    
+    function hideUI() {
+        if (!isFullScreenMode()) return;
+        if (isHidden) return;
+        controls.style.opacity = '0';
+        controls.style.pointerEvents = 'none';
+        dragHandle.style.opacity = '0';
+        dragHandle.style.pointerEvents = 'none';
+        isHidden = true;
+    }
+    
+    function resetHideTimer() {
+        showUI();
+        clearTimeout(hideTimer);
+        if (isFullScreenMode()) {
+            hideTimer = setTimeout(hideUI, HIDE_DELAY);
+        }
+    }
+    
+    // 监听触碰和鼠标活动
+    mainContent.addEventListener('touchstart', resetHideTimer, { passive: true });
+    mainContent.addEventListener('touchmove', resetHideTimer, { passive: true });
+    mainContent.addEventListener('mousemove', resetHideTimer, { passive: true });
+    mainContent.addEventListener('click', resetHideTimer, { passive: true });
+    
+    // 监听侧边栏和聊天面板状态变化
+    const observer = new MutationObserver(() => {
+        if (!isFullScreenMode()) {
+            clearTimeout(hideTimer);
+            showUI();
+        } else {
+            resetHideTimer();
+        }
+    });
+    
+    const sidebar = document.querySelector('.sidebar-left');
+    const chatPanel = document.getElementById('chatPanel');
+    if (sidebar) observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    if (chatPanel) observer.observe(chatPanel, { attributes: true, attributeFilter: ['class', 'style'] });
+})();
+
 // 面板直接滑动缩放（在侧边栏/聊天面板上滑动）
 function initPanelSwipeResize() {
     const isLandscape = () => window.matchMedia('(orientation: landscape)').matches;
