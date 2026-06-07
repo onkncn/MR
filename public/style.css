@@ -2448,38 +2448,61 @@ body {
         overflow: hidden;
     }
     
-    /* 控制栏：参考桌面版样式 */
+    /* 控制栏：横屏时紧凑，底部居中 */
     .main-controls {
-        padding: 12px 16px;
-        gap: 16px;
+        padding: 8px 16px;
+        gap: 12px;
+        justify-content: center;
+        background: transparent;
+        border-top: none;
     }
     
     .control-btn {
-        width: 44px;
-        height: 44px;
-        padding: 10px;
+        width: 40px;
+        height: 40px;
+        padding: 8px;
     }
     
     .control-btn svg {
-        width: 22px;
-        height: 22px;
+        width: 20px;
+        height: 20px;
     }
     
-    /* 参与者列表横向滚动 */
+    .denoise-btn {
+        min-height: 40px;
+        padding: 4px 8px !important;
+    }
+    
+    .denoise-label {
+        font-size: 8px;
+    }
+    
+    /* 参与者列表：悬浮在屏幕共享上方 */
+    .participants-container {
+        position: relative;
+    }
+    
     .channel-participants {
         display: flex;
         flex-wrap: nowrap;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
-        padding: 8px 0;
-        gap: 8px;
+        padding: 6px 8px;
+        gap: 6px;
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        z-index: 10;
+        border-radius: 0 0 8px 8px;
     }
     
     .channel-participant-item {
         flex-shrink: 0;
     }
     
-    /* 屏幕共享区域自适应 */
+    /* 屏幕共享区域：占据更多空间 */
     .screen-share-container {
         flex: 1;
         min-height: 0;
@@ -2507,8 +2530,8 @@ body {
     
     /* 频道头部紧凑 + 上滑隐藏动画 */
     .channel-header {
-        margin-bottom: 12px;
-        padding-bottom: 8px;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
         transition: transform 0.3s ease, opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease;
         transform: translateY(0);
         opacity: 1;
@@ -2526,7 +2549,7 @@ body {
     }
     
     .channel-name-display {
-        font-size: 16px;
+        font-size: 14px;
     }
     
     /* 隐藏移动端专属元素 */
