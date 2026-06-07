@@ -291,43 +291,36 @@ async function runTests() {
     // ─── 清理测试频道 ───
     section('🧹 4. 清理测试频道');
     try {
-        const cleanupPage = await browser.newPage();
-        await cleanupPage.setViewport({ width: 1280, height: 720 });
-        await cleanupPage.goto(URL, { waitUntil: 'networkidle0', timeout: 10000 });
-        
-        const cleaned = await cleanupPage.evaluate(async () => {
-            return new Promise((resolve) => {
-                const s = io();
-                s.on('connect', () => {
-                    s.emit('login', 'TestCleanup');
-                    s.on('channel-list', (list) => {
-                        const testChannels = list.filter(c => c.name === '自动隐藏测试');
-                        let deleted = 0;
-                        if (testChannels.length === 0) {
+        const cleaned = await new Promise((resolve) => {
+            const sio = require('socket.io-client');
+            const s = sio(URL, { rejectUnauthorized: false });
+            s.on('connect', () => {
+                // 用创建者用户名登录才能删除
+                s.emit('login', 'AutoHideTest');
+                s.on('channel-list', (list) => {
+                    const testChannels = list.filter(c => c.name === '自动隐藏测试');
+                    if (testChannels.length === 0) {
+                        s.disconnect();
+                        resolve(0);
+                        return;
+                    }
+                    let removed = 0;
+                    s.on('channel-removed', () => {
+                        removed++;
+                        if (removed >= testChannels.length) {
                             s.disconnect();
-                            resolve(0);
-                            return;
+                            resolve(removed);
                         }
-                        testChannels.forEach(c => {
-                            s.emit('delete-channel', c.id);
-                            s.once('channel-removed', () => {
-                                deleted++;
-                                if (deleted >= testChannels.length) {
-                                    s.disconnect();
-                                    resolve(deleted);
-                                }
-                            });
-                        });
-                        // 超时保护
-                        setTimeout(() => { s.disconnect(); resolve(deleted); }, 5000);
                     });
+                    testChannels.forEach(c => s.emit('delete-channel', c.id));
+                    setTimeout(() => { s.disconnect(); resolve(removed); }, 5000);
                 });
             });
+            setTimeout(() => { s.disconnect(); resolve(0); }, 10000);
         });
         
         if (cleaned > 0) ok(`清理了 ${cleaned} 个测试频道`);
         else ok('无需清理');
-        await cleanupPage.close();
     } catch (e) {
         console.log('  ⚠️ 清理频道失败:', e.message);
     }
