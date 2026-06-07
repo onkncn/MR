@@ -2591,7 +2591,7 @@ body {
         
         /* iOS 横屏时隐藏频道名 */
         .channel-header {
-            display: none;
+            display: none !important;
         }
     }
 }
