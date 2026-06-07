@@ -270,6 +270,14 @@ function isIOS() {
            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+function isAndroid() {
+    return /Android/i.test(navigator.userAgent);
+}
+
+function isMobileDevice() {
+    return isIOS() || isAndroid();
+}
+
 function initSidebar() {
     const isMobile = window.innerWidth <= 768;
     if (isMobile) {
@@ -1680,7 +1688,7 @@ async function toggleAudio() {
         return;
     }
     
-    const iOS = isIOS();
+    const mobile = isMobileDevice();
     
     if (!audioTrack) {
         // 首次开麦，请求麦克风权限
@@ -1690,7 +1698,7 @@ async function toggleAudio() {
                 noiseSuppression: denoiseEnabled,
                 autoGainControl: true
             };
-            if (!iOS) {
+            if (!mobile) {
                 audioConstraints.sampleRate = 48000;
                 audioConstraints.sampleSize = 16;
                 audioConstraints.channelCount = 1;
@@ -1704,11 +1712,11 @@ async function toggleAudio() {
             
             let sendTrack; // 实际发送给 PeerConnection 的音轨
             
-            if (iOS) {
-                // iOS: 跳过 Web Audio API 管线，直接使用原生音轨
+            if (mobile) {
+                // 移动端: 跳过 Web Audio API 管线，直接使用原生音轨
                 sendTrack = audioTrack;
-                console.log('[iOS] 直接使用原生麦克风音轨');
-                console.log('[iOS] audioTrack:', audioTrack.id, 'enabled:', audioTrack.enabled, 'readyState:', audioTrack.readyState);
+                console.log('[Mobile] 直接使用原生麦克风音轨');
+                console.log('[Mobile] audioTrack:', audioTrack.id, 'enabled:', audioTrack.enabled, 'readyState:', audioTrack.readyState);
             } else {
                 // 桌面端: 建立 Web Audio API 管线：麦克风 → GainNode → 混合输出
                 if (!audioContext) {
@@ -1737,7 +1745,7 @@ async function toggleAudio() {
             }
             
             localStream.addTrack(sendTrack);
-            console.log('[iOS] sendTrack added to localStream, localStream tracks:', localStream.getTracks().map(t => t.kind + ':' + t.id));
+            console.log('[Audio] sendTrack added to localStream, localStream tracks:', localStream.getTracks().map(t => t.kind + ':' + t.id));
             
             // 填充所有已有的 PeerConnection 的音频
             peerConnections.forEach((pc, peerId) => {
@@ -1810,7 +1818,7 @@ async function toggleDenoise() {
     denoiseEnabled = !denoiseEnabled;
     
     if (localStream && audioTrack) {
-        const iOS = isIOS();
+        const mobile = isMobileDevice();
         try {
             // 重新获取音频流，切换降噪设置
             const audioConstraints = {
@@ -1818,7 +1826,7 @@ async function toggleDenoise() {
                 noiseSuppression: denoiseEnabled,
                 autoGainControl: true
             };
-            if (!iOS) {
+            if (!mobile) {
                 audioConstraints.sampleRate = 48000;
                 audioConstraints.sampleSize = 16;
                 audioConstraints.channelCount = 1;
@@ -1839,8 +1847,8 @@ async function toggleDenoise() {
             
             let sendTrack;
             
-            if (iOS) {
-                // iOS: 直接使用原生音轨
+            if (mobile) {
+                // 移动端: 直接使用原生音轨
                 sendTrack = newTrack;
             } else {
                 // 桌面端: 重新连接 GainNode 管线
