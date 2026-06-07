@@ -140,7 +140,6 @@ const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const chatSendBtn = document.getElementById('chatSendBtn');
 const chatFileBtn = document.getElementById('chatFileBtn');
-const chatFileInput = document.getElementById('chatFileInput');
 const chatPreviewArea = document.getElementById('chatPreviewArea');
 const chatCollapseBtn = document.getElementById('chatCollapseBtn');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
@@ -736,14 +735,33 @@ chatInput.addEventListener('keydown', (e) => {
     }
 });
 chatInput.addEventListener('paste', handleChatPaste);
+
+// iOS 兼容的文件选择：动态创建 input 元素
+function createFileInput() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*';
+    input.style.display = 'none';
+    input.addEventListener('change', handleChatFile);
+    return input;
+}
+
+let currentFileInput = null;
+
 chatFileBtn.addEventListener('click', () => {
     if (!currentChannel) {
         alert('请先加入频道');
         return;
     }
-    chatFileInput.click();
+    
+    // 每次点击创建新的 input，确保 iOS 兼容
+    if (currentFileInput) {
+        currentFileInput.remove();
+    }
+    currentFileInput = createFileInput();
+    document.body.appendChild(currentFileInput);
+    currentFileInput.click();
 });
-chatFileInput.addEventListener('change', handleChatFile);
 
 function initResizeHandles() {
     const sidebarHandle = document.getElementById('sidebarResizeHandle');
@@ -2750,13 +2768,14 @@ function handleChatPaste(e) {
     }
 }
 
-function handleChatFile() {
-    const file = chatFileInput.files[0];
+function handleChatFile(e) {
+    const input = e.target; // 获取触发事件的 input 元素
+    const file = input.files[0];
     if (!file) return;
     
     if (!currentChannel) {
         alert('请先加入频道');
-        chatFileInput.value = '';
+        input.remove();
         return;
     }
     
@@ -2772,7 +2791,9 @@ function handleChatFile() {
         addImagePreview(imageData);
     };
     reader.readAsDataURL(file);
-    chatFileInput.value = '';
+    
+    // 清理：移除临时 input 元素
+    setTimeout(() => input.remove(), 100);
 }
 
 function getUserColor(name) {
