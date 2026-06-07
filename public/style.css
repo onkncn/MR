@@ -2593,5 +2593,34 @@ body {
         .channel-header {
             display: none !important;
         }
+        
+        /* iOS 横屏时隐藏拖拽手柄 */
+        .header-drag-handle {
+            display: none !important;
+        }
     }
+}
+
+/* 频道名拖拽手柄 */
+.header-drag-handle {
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    touch-action: none;
+    position: relative;
+    z-index: 5;
+}
+
+.header-drag-handle::after {
+    content: '';
+    width: 40px;
+    height: 4px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+.header-drag-handle:hover::after {
+    background: rgba(88, 101, 242, 0.5);
 }

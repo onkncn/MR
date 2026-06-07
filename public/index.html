@@ -88,7 +88,7 @@
 
         <div class="main-content">
             <div class="current-channel">
-                <div class="channel-header">
+                <div class="channel-header" id="channelHeader">
                     <svg class="channel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
                         <polygon points="10 8 16 12 10 16 10 8"></polygon>
@@ -103,6 +103,8 @@
                         </button>
                     </div>
                 </div>
+                <!-- 拖拽手柄：上滑隐藏频道名 -->
+                <div class="header-drag-handle" id="headerDragHandle"></div>
                 
                 <div class="channel-placeholder" id="channelPlaceholder">
                     <div class="placeholder-icon">🎧</div>

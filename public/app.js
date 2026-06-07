@@ -916,6 +916,63 @@ function initResizeHandles() {
 
 initResizeHandles();
 
+// ====== 频道名拖拽隐藏 ======
+// 拖拽频道名下方的 handle 向上可隐藏频道名，向下可显示
+(function initHeaderDragHandle() {
+    const handle = document.getElementById('headerDragHandle');
+    const header = document.getElementById('channelHeader');
+    if (!handle || !header) return;
+    
+    let startY = 0;
+    let headerHeight = 0;
+    let isDragging = false;
+    const DRAG_THRESHOLD = 30; // 最小拖拽距离
+    
+    handle.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+        headerHeight = header.offsetHeight;
+        isDragging = true;
+        header.style.transition = 'none'; // 拖拽时禁用动画
+    }, { passive: true });
+    
+    handle.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const currentY = e.touches[0].clientY;
+        const deltaY = currentY - startY;
+        
+        // 向上拖拽：缩小 header，向下拖拽：恢复 header
+        const newHeight = Math.max(0, Math.min(headerHeight, headerHeight + deltaY));
+        header.style.height = newHeight + 'px';
+        header.style.overflow = 'hidden';
+        header.style.opacity = (newHeight / headerHeight).toString();
+        e.preventDefault();
+    }, { passive: false });
+    
+    handle.addEventListener('touchend', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        header.style.transition = ''; // 恢复动画
+        
+        const endY = e.changedTouches[0].clientY;
+        const deltaY = endY - startY;
+        
+        if (deltaY < -DRAG_THRESHOLD) {
+            // 上滑超过阈值 → 隐藏
+            header.classList.add('header-hidden');
+        } else {
+            // 下滑或未超过阈值 → 恢复
+            header.classList.remove('header-hidden');
+            header.style.height = '';
+            header.style.opacity = '';
+        }
+    }, { passive: true });
+    
+    // 双击 handle 切换显示/隐藏
+    handle.addEventListener('dblclick', () => {
+        header.classList.toggle('header-hidden');
+    });
+})();
+
 // 面板直接滑动缩放（在侧边栏/聊天面板上滑动）
 function initPanelSwipeResize() {
     const isLandscape = () => window.matchMedia('(orientation: landscape)').matches;
