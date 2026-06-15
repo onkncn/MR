@@ -9,6 +9,9 @@ let audioEnabled = false;
 let denoiseEnabled = true;
 let screenSharing = false;
 let videoEnabled = true; // 扬声器状态
+let ttsEnabled = true; // 聊天消息 TTS 播放状态
+const pendingTtsMessages = [];
+let ttsPromptEl = null;
 
 // Web Audio API — 麦克风音量增益 + 音频混合
 let audioContext = null;
@@ -23,6 +26,8 @@ const MAX_TEXT_MESSAGE_LENGTH = 5000;
 const MAX_DATA_MESSAGE_LENGTH = 100000;
 const MAX_DOM_MESSAGES = 200;
 const CHAT_HISTORY_MAX = 500;
+const TTS_MAX_CHARS = 180;
+const TTS_PENDING_MAX = 5;
 
 // ====== C1: TODO — 全局变量封装到 AppState ======
 // 当前主要状态变量为全局作用域（~行3-50），后续可封装到 window.appState，
@@ -41,6 +46,7 @@ function loadSavedState() {
         }
         if (typeof saved.audioEnabled === 'boolean') audioEnabled = saved.audioEnabled;
         if (typeof saved.videoEnabled === 'boolean') videoEnabled = saved.videoEnabled;
+        if (typeof saved.ttsEnabled === 'boolean') ttsEnabled = saved.ttsEnabled;
     } catch (e) {}
 }
 
@@ -102,6 +108,7 @@ const toggleAudioBtn = document.getElementById('toggleAudioBtn');
 const toggleVideoBtn = document.getElementById('toggleVideoBtn');
 const toggleScreenShareBtn = document.getElementById('toggleScreenShareBtn');
 const toggleDenoiseBtn = document.getElementById('toggleDenoiseBtn');
+const toggleTtsBtn = document.getElementById('toggleTtsBtn');
 const toggleChatExpandBtn = document.getElementById('toggleChatExpandBtn');
 const placeholderCreateBtn = document.getElementById('placeholderCreateBtn');
 const placeholderSelectBtn = document.getElementById('placeholderSelectBtn');
@@ -256,6 +263,8 @@ document.addEventListener('visibilitychange', async () => {
 
 // 恢复保存的按钮状态
 if (typeof updateVideoButton === 'function') updateVideoButton();
+if (typeof updateTtsButton === 'function') updateTtsButton();
+if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => {};
 
 // 有缓存用户名时自动登录
 if (userNameInput && userNameInput.value.trim()) {
@@ -393,6 +402,11 @@ loginBtn.addEventListener('click', login);
 logoutBtn.addEventListener('click', logout);
 mobileLogoutBtn.addEventListener('click', logout);
 sidebarOverlay.addEventListener('click', closeSidebar);
+['pointerdown', 'touchend', 'keydown'].forEach(eventName => {
+    document.addEventListener(eventName, () => {
+        if (ttsEnabled && !isIOS()) window.speechSynthesis?.resume?.();
+    }, { passive: true });
+});
 toggleAudioBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleAudio();
@@ -409,6 +423,12 @@ toggleDenoiseBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleDenoise();
 });
+if (toggleTtsBtn) {
+    toggleTtsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleTts();
+    });
+}
 toggleChatExpandBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     room.classList.add('chat-only');
@@ -1257,6 +1277,9 @@ function login() {
 
 function logout() {
     leaveChannel();
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+    }
     
     // 清理 Web Audio API 资源
     if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
@@ -2059,10 +2082,141 @@ function updateDenoiseButton() {
     }
 }
 
+function toggleTts() {
+    ttsEnabled = !ttsEnabled;
+    updateTtsButton();
+    saveState('ttsEnabled', ttsEnabled);
+    if (ttsEnabled) {
+        if (isIOS() && pendingTtsMessages.length > 0) {
+            showTtsPrompt();
+        } else if ('speechSynthesis' in window) {
+            window.speechSynthesis.resume();
+        }
+    } else {
+        pendingTtsMessages.length = 0;
+        hideTtsPrompt();
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    }
+}
+
+function updateTtsButton() {
+    if (!toggleTtsBtn) return;
+    if (ttsEnabled) {
+        toggleTtsBtn.classList.add('active');
+        toggleTtsBtn.title = '聊天TTS（已开启）';
+    } else {
+        toggleTtsBtn.classList.remove('active');
+        toggleTtsBtn.title = '聊天TTS（已关闭）';
+    }
+}
+
+function getTtsText(data) {
+    if (!data || data.type !== 'text' || !data.message) return '';
+    return String(data.message)
+        .replace(/https?:\/\/\S+/gi, '链接')
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, TTS_MAX_CHARS);
+}
+
+function getPreferredTtsVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    return voices.find(v => /^zh[-_]?CN/i.test(v.lang)) ||
+           voices.find(v => /^zh/i.test(v.lang)) ||
+           voices.find(v => /Chinese|Mandarin|中文|普通话/i.test(v.name)) ||
+           voices[0] ||
+           null;
+}
+
+function createTtsUtterance(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = getPreferredTtsVoice();
+    if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang || 'zh-CN';
+    } else {
+        utterance.lang = 'zh-CN';
+    }
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    return utterance;
+}
+
+function enqueueTtsMessage(data) {
+    pendingTtsMessages.push(data);
+    while (pendingTtsMessages.length > TTS_PENDING_MAX) {
+        pendingTtsMessages.shift();
+    }
+}
+
+function showTtsPrompt() {
+    if (!isIOS() || !ttsEnabled || !videoEnabled || pendingTtsMessages.length === 0) return;
+    if (!ttsPromptEl) {
+        ttsPromptEl = document.createElement('button');
+        ttsPromptEl.className = 'tts-play-prompt';
+        ttsPromptEl.type = 'button';
+        ttsPromptEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            flushPendingTtsMessages();
+        });
+        document.body.appendChild(ttsPromptEl);
+    }
+    ttsPromptEl.textContent = `播放 ${pendingTtsMessages.length} 条TTS`;
+    ttsPromptEl.classList.remove('hidden');
+}
+
+function hideTtsPrompt() {
+    if (ttsPromptEl) ttsPromptEl.classList.add('hidden');
+}
+
+function flushPendingTtsMessages() {
+    if (!ttsEnabled || !videoEnabled) return;
+    const queue = pendingTtsMessages.splice(0, pendingTtsMessages.length);
+    hideTtsPrompt();
+    queue.forEach(data => speakChatMessage(data, { fromUserGesture: true }));
+}
+
+function speakChatMessage(data, options = {}) {
+    if (!ttsEnabled || !videoEnabled) return;
+    if (data.user === userName) return;
+    if (!data.tts) return;
+    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+        console.warn('[TTS] 当前浏览器不支持 SpeechSynthesis');
+        return;
+    }
+
+    const text = getTtsText(data);
+    if (!text) return;
+
+    if (isIOS() && !options.fromUserGesture) {
+        enqueueTtsMessage(data);
+        showTtsPrompt();
+        return;
+    }
+
+    window.speechSynthesis.resume();
+    const utterance = createTtsUtterance(`${data.user}说：${text}`);
+    window.speechSynthesis.speak(utterance);
+}
+
 function toggleVideo() {
     videoEnabled = !videoEnabled;
     updateVideoButton();
     saveState('videoEnabled', videoEnabled);
+    if (!videoEnabled && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        pendingTtsMessages.length = 0;
+        hideTtsPrompt();
+    } else if (videoEnabled && ttsEnabled) {
+        if (isIOS()) {
+            showTtsPrompt();
+        } else {
+            flushPendingTtsMessages();
+        }
+    }
     
     // 控制所有远程音频
     remoteAudioElements.forEach(audio => {
@@ -2843,6 +2997,7 @@ socket.on('screen-share-status', (data) => {
 
 socket.on('chat-message', (data) => {
     addChatMessage(data);
+    speakChatMessage(data);
 });
 
 function sendChatMessage() {
@@ -2858,7 +3013,8 @@ function sendChatMessage() {
             user: userName,
             message: message,
             time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-            type: 'text'
+            type: 'text',
+            tts: ttsEnabled
         };
         socket.emit('chat-message', msgData);
         chatInput.value = '';

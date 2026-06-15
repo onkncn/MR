@@ -1973,6 +1973,58 @@ body {
     display: none;
 }
 
+.tts-btn {
+    position: relative;
+    width: auto !important;
+    padding: 8px 12px !important;
+    gap: 4px;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 48px;
+}
+
+.tts-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.tts-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    color: inherit;
+}
+
+.tts-btn.active {
+    background: #5865f2;
+    color: #ffffff;
+}
+
+.tts-btn.active svg line:last-child {
+    display: none;
+}
+
+.tts-play-prompt {
+    position: fixed;
+    left: 50%;
+    bottom: 88px;
+    transform: translateX(-50%);
+    z-index: 2000;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 14px;
+    background: #5865f2;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.tts-play-prompt.hidden {
+    display: none;
+}
+
 /* ====== 桌面端聊天全屏模式 ====== */
 .room.chat-only .sidebar-left,
 .room.chat-only .resize-handle-v {
