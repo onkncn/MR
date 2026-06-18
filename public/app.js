@@ -67,6 +67,7 @@ const peerConnections = new Map();
 const pendingCandidates = new Map(); // BUGFIX: H3 ICE候选队列
 const screenStreams = new Map(); // 存储每个用户的屏幕共享流
 let viewingScreenOf = null; // 当前正在观看谁的屏幕
+let selfScreenPreviewEnabled = false; // 默认不渲染自己的屏幕共享，降低本机资源占用
 const channelList = [];
 
 // 从服务端获取 ICE 配置
@@ -1306,6 +1307,7 @@ function logout() {
     localStream = null;
     screenStream = null;
     screenSharing = false;
+    selfScreenPreviewEnabled = false;
     audioEnabled = false;
     denoiseEnabled = true;
     viewingScreenOf = null;
@@ -1557,6 +1559,8 @@ function updateParticipantsDisplay() {
 }
 
 function showScreenShare(userId) {
+    hideSelfScreenPreviewPrompt();
+    hideSelfScreenPreviewPauseBtn();
     if (!userId) {
         // 清理浮窗
         if (minimizedThumb) {
@@ -1565,11 +1569,86 @@ function showScreenShare(userId) {
             minimizedThumb = null;
         }
         screenShareContainer.classList.add('hidden');
+        screenShareContainer.classList.remove('self-preview-paused');
         return;
     }
     
     screenShareContainer.classList.remove('hidden');
+    screenShareContainer.classList.remove('self-preview-paused');
     screenSharingUser.textContent = userId;
+}
+
+function ensureSelfScreenPreviewPrompt() {
+    let prompt = document.getElementById('selfScreenPreviewPrompt');
+    if (prompt) return prompt;
+
+    prompt = document.createElement('button');
+    prompt.id = 'selfScreenPreviewPrompt';
+    prompt.type = 'button';
+    prompt.className = 'self-screen-preview-prompt';
+    prompt.innerHTML = `
+        <span class="self-screen-preview-title">你正在共享屏幕</span>
+        <span class="self-screen-preview-text">本地预览已暂停以降低资源占用</span>
+        <span class="self-screen-preview-action">查看共享内容</span>
+    `;
+    prompt.addEventListener('click', () => {
+        selfScreenPreviewEnabled = true;
+        switchScreenView(userName);
+    });
+
+    const wrapper = document.getElementById('screenShareVideo');
+    if (wrapper) wrapper.appendChild(prompt);
+    return prompt;
+}
+
+function hideSelfScreenPreviewPrompt() {
+    const prompt = document.getElementById('selfScreenPreviewPrompt');
+    if (prompt) prompt.classList.add('hidden');
+}
+
+function ensureSelfScreenPreviewPauseBtn() {
+    let btn = document.getElementById('selfScreenPreviewPauseBtn');
+    if (btn) return btn;
+
+    btn = document.createElement('button');
+    btn.id = 'selfScreenPreviewPauseBtn';
+    btn.type = 'button';
+    btn.className = 'self-screen-preview-pause hidden';
+    btn.textContent = '暂停本地预览';
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showOwnScreenShareStatus();
+    });
+
+    const wrapper = document.getElementById('screenShareVideo');
+    if (wrapper) wrapper.appendChild(btn);
+    return btn;
+}
+
+function hideSelfScreenPreviewPauseBtn() {
+    const btn = document.getElementById('selfScreenPreviewPauseBtn');
+    if (btn) btn.classList.add('hidden');
+}
+
+function showOwnScreenShareStatus() {
+    if (!screenSharing || !screenStream) return;
+    viewingScreenOf = null;
+    selfScreenPreviewEnabled = false;
+    if (remoteScreenVideo.srcObject === screenStream) {
+        remoteScreenVideo.pause();
+    }
+    remoteScreenVideo.srcObject = null;
+    remoteScreenVideo.removeAttribute('src');
+    remoteScreenVideo.load();
+    screenShareContainer.classList.remove('hidden');
+    screenShareContainer.classList.add('self-preview-paused');
+    screenSharingUser.textContent = userName + ' (你，正在共享)';
+    const prompt = ensureSelfScreenPreviewPrompt();
+    prompt.classList.remove('hidden');
+    hideSelfScreenPreviewPauseBtn();
+    updateParticipantsDisplay();
+    updateChannelList();
+    updateScreenShareBar();
 }
 
 // 切换观看某人的屏幕共享
@@ -1583,6 +1662,16 @@ function switchScreenView(targetUser) {
     }
     
     viewingScreenOf = targetUser;
+    if (targetUser === userName) {
+        selfScreenPreviewEnabled = true;
+    }
+    hideSelfScreenPreviewPrompt();
+    screenShareContainer.classList.remove('self-preview-paused');
+    if (targetUser === userName) {
+        ensureSelfScreenPreviewPauseBtn().classList.remove('hidden');
+    } else {
+        hideSelfScreenPreviewPauseBtn();
+    }
     remoteScreenVideo.srcObject = stream;
     remoteScreenVideo.autoplay = true;
     remoteScreenVideo.playsInline = true;
@@ -1826,6 +1915,7 @@ function cleanupAllMedia() {
     audioTrack = null;
     audioEnabled = false;
     screenSharing = false;
+    selfScreenPreviewEnabled = false;
     viewingScreenOf = null;
     currentScreenSharer = null;
 }
@@ -2428,16 +2518,9 @@ async function startScreenShare() {
             stopScreenShare();
         };
         
-        // 在屏幕共享容器中显示自己的屏幕
+        // BUGFIX: P2 默认不渲染自己的屏幕预览，避免本机长时间解码/绘制导致掉帧
         screenStreams.set(userName, screenStream);
-        viewingScreenOf = userName;
-        updateScreenShareBar();
-        remoteScreenVideo.srcObject = screenStream;
-        remoteScreenVideo.autoplay = true;
-        remoteScreenVideo.muted = true;
-        remoteScreenVideo.playsInline = true;
-        screenShareContainer.classList.remove('hidden');
-        screenSharingUser.textContent = userName + ' (你)';
+        showOwnScreenShareStatus();
         
         console.log('屏幕共享已启动');
         
@@ -2493,6 +2576,7 @@ async function stopScreenShare() {
     }
     
     screenSharing = false;
+    selfScreenPreviewEnabled = false;
     updateScreenShareButton();
     updateParticipantsDisplay();
     updateScreenShareBar();
