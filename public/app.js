@@ -26,6 +26,8 @@ const MAX_TEXT_MESSAGE_LENGTH = 5000;
 const MAX_DATA_MESSAGE_LENGTH = 100000;
 const MAX_DOM_MESSAGES = 200;
 const CHAT_HISTORY_MAX = 500;
+const CHAT_IMAGE_MAX_SIDE = 1280;
+const CHAT_IMAGE_MIN_QUALITY = 0.45;
 const TTS_MAX_CHARS = 180;
 const TTS_PENDING_MAX = 5;
 
@@ -756,32 +758,44 @@ chatInput.addEventListener('keydown', (e) => {
 });
 chatInput.addEventListener('paste', handleChatPaste);
 
-// iOS 兼容的文件选择：动态创建 input 元素
+// iOS 兼容的文件选择：使用视觉隐藏而非 display:none，避免移动端拦截 click()
 function createFileInput() {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*,video/*';
-    input.style.display = 'none';
+    input.className = 'chat-file-input-native';
     input.addEventListener('change', handleChatFile);
     return input;
 }
 
 let currentFileInput = null;
+let lastFilePickerAt = 0;
 
-chatFileBtn.addEventListener('click', () => {
+function openChatFilePicker(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     if (!currentChannel) {
         alert('请先加入频道');
         return;
     }
-    
-    // 每次点击创建新的 input，确保 iOS 兼容
-    if (currentFileInput) {
-        currentFileInput.remove();
+
+    // touchend 后部分移动浏览器还会补发 click，短时间内忽略重复触发
+    const now = Date.now();
+    if (now - lastFilePickerAt < 700) return;
+    lastFilePickerAt = now;
+
+    if (!currentFileInput || !document.body.contains(currentFileInput)) {
+        currentFileInput = createFileInput();
+        document.body.appendChild(currentFileInput);
     }
-    currentFileInput = createFileInput();
-    document.body.appendChild(currentFileInput);
+    currentFileInput.value = '';
     currentFileInput.click();
-});
+}
+
+chatFileBtn.addEventListener('click', openChatFilePicker);
+chatFileBtn.addEventListener('touchend', openChatFilePicker, { passive: false });
 
 function initResizeHandles() {
     const sidebarHandle = document.getElementById('sidebarResizeHandle');
@@ -3068,32 +3082,115 @@ function handleChatPaste(e) {
     }
 }
 
-function handleChatFile(e) {
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (evt) => resolve(evt.target.result);
+        reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function loadImageElement(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片格式无法预览'));
+        img.src = url;
+    });
+}
+
+function canvasToDataURL(canvas, quality) {
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function compressImageForChat(file) {
+    const objectUrl = URL.createObjectURL(file);
+    try {
+        const img = await loadImageElement(objectUrl);
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        const maxSide = Math.max(width, height);
+        if (maxSide > CHAT_IMAGE_MAX_SIDE) {
+            const scale = CHAT_IMAGE_MAX_SIDE / maxSide;
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+        }
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('浏览器不支持图片压缩');
+
+        for (let sideScale = 1; sideScale >= 0.45; sideScale -= 0.15) {
+            canvas.width = Math.max(1, Math.round(width * sideScale));
+            canvas.height = Math.max(1, Math.round(height * sideScale));
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            for (let quality = 0.82; quality >= CHAT_IMAGE_MIN_QUALITY; quality -= 0.12) {
+                const dataUrl = canvasToDataURL(canvas, quality);
+                if (dataUrl.length <= MAX_DATA_MESSAGE_LENGTH) return dataUrl;
+            }
+        }
+        throw new Error('图片压缩后仍超过发送限制');
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
+async function prepareChatImage(file) {
+    const originalDataUrl = await readFileAsDataURL(file);
+    if (originalDataUrl.length <= MAX_DATA_MESSAGE_LENGTH) return originalDataUrl;
+
+    // BUGFIX: M10 移动端相册原图通常超过服务端 data URL 限制，发送前压缩到可传输大小
+    try {
+        return await compressImageForChat(file);
+    } catch (err) {
+        console.warn('[ChatFile] 图片压缩失败:', err.message || err);
+        throw new Error('图片过大或格式不支持，请选择 JPG/PNG 图片，或先截图后发送');
+    }
+}
+
+async function handleChatFile(e) {
     const input = e.target; // 获取触发事件的 input 元素
     const file = input.files[0];
     if (!file) return;
     
     if (!currentChannel) {
         alert('请先加入频道');
-        input.remove();
         return;
     }
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
+
+    try {
+        if (file.type.startsWith('image/')) {
+            const dataUrl = await prepareChatImage(file);
+            const imageData = {
+                id: ++imageIdCounter, // BUGFIX: L7 自增计数器防碰撞
+                dataUrl: dataUrl,
+                fileName: file.name,
+                type: 'image'
+            };
+            pendingImages.push(imageData);
+            addImagePreview(imageData);
+            return;
+        }
+
+        const dataUrl = await readFileAsDataURL(file);
+        if (dataUrl.length > MAX_DATA_MESSAGE_LENGTH) {
+            alert('视频文件过大，当前聊天附件限制约 100KB，请压缩后再发送');
+            return;
+        }
         const imageData = {
             id: ++imageIdCounter, // BUGFIX: L7 自增计数器防碰撞
-            dataUrl: e.target.result,
+            dataUrl: dataUrl,
             fileName: file.name,
-            type: file.type.startsWith('image') ? 'image' : 'video'
+            type: 'video'
         };
         pendingImages.push(imageData);
         addImagePreview(imageData);
-    };
-    reader.readAsDataURL(file);
-    
-    // 清理：移除临时 input 元素
-    setTimeout(() => input.remove(), 100);
+    } catch (err) {
+        alert(err.message || '读取文件失败，请重试');
+    }
 }
 
 function getUserColor(name) {

@@ -1900,6 +1900,16 @@ body {
     height: 24px;
 }
 
+.chat-file-input-native {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0.01;
+    z-index: 0;
+}
+
 .chat-input {
     flex: 1;
     padding: 10px 12px;
