@@ -264,9 +264,6 @@ document.addEventListener('visibilitychange', async () => {
     });
 });
 
-// 恢复保存的按钮状态
-if (typeof updateVideoButton === 'function') updateVideoButton();
-if (typeof updateTtsButton === 'function') updateTtsButton();
 if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => {};
 
 // 有缓存用户名时自动登录
@@ -1267,6 +1264,7 @@ function login() {
     lobby.classList.add('hidden');
     room.classList.remove('hidden');
     room.classList.add('no-channel');
+    syncSavedControlButtons();
     
     localAvatar.textContent = name.charAt(0).toUpperCase();
     localUserDisplay.textContent = name;
@@ -1321,10 +1319,9 @@ function logout() {
     clearImagePreview();
     
     // 重置按钮
-    toggleAudioBtn.classList.remove('mic-active');
-    toggleVideoBtn.classList.remove('speaker-active');
     toggleScreenShareBtn.classList.remove('screen-active');
     if (toggleDenoiseBtn) toggleDenoiseBtn.classList.add('active');
+    updateAudioButtons();
     updateVideoButton();
     
     // 切换到登录页
@@ -1843,7 +1840,10 @@ async function joinChannel(channel) {
     try {
         // 加入频道时默认关闭麦克风，如果上次是开的则自动尝试开启
         localStream = new MediaStream();
-        audioEnabled = false;
+        const savedMicState = (() => {
+            try { return JSON.parse(localStorage.getItem('mr_state') || '{}').audioEnabled === true; } catch(e) { return false; }
+        })();
+        audioEnabled = savedMicState;
         audioTrack = null;
 
         // BUGFIX: L5 密码保护频道先询问密码
@@ -1864,9 +1864,6 @@ async function joinChannel(channel) {
         updateParticipantsDisplay();
         
         // 如果上次麦克风是开启的，自动尝试开麦（会触发权限请求）
-        const savedMicState = (() => {
-            try { return JSON.parse(localStorage.getItem('mr_state') || '{}').audioEnabled; } catch(e) { return false; }
-        })();
         if (savedMicState) {
             await toggleAudio();
         }
@@ -1941,8 +1938,8 @@ async function leaveChannel() {
     if (toggleChatExpandBtn) toggleChatExpandBtn.classList.remove('active');
 
     // 重置按钮状态
-    toggleAudioBtn.classList.remove('mic-active');
-    toggleVideoBtn.classList.remove('speaker-active');
+    updateAudioButtons();
+    updateVideoButton();
     toggleScreenShareBtn.classList.remove('screen-active');
 
     currentChannelName.textContent = '选择一个频道';
@@ -2351,6 +2348,14 @@ function updateVideoButton() {
         toggleVideoBtn.classList.remove('speaker-active');
     }
 }
+
+function syncSavedControlButtons() {
+    updateAudioButtons();
+    updateVideoButton();
+    updateTtsButton();
+}
+
+syncSavedControlButtons();
 
 function updateScreenShareButton() {
     const btn = toggleScreenShareBtn.querySelector('svg');
@@ -3466,8 +3471,8 @@ socket.on('kicked', async (data) => {
         showScreenShare(null);
         room.classList.remove('chat-only');
         if (toggleChatExpandBtn) toggleChatExpandBtn.classList.remove('active');
-        toggleAudioBtn.classList.remove('mic-active');
-        toggleVideoBtn.classList.remove('speaker-active');
+        updateAudioButtons();
+        updateVideoButton();
         toggleScreenShareBtn.classList.remove('screen-active');
         currentChannelName.textContent = '选择一个频道';
         updateParticipantsDisplay();
