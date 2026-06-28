@@ -1,4 +1,4 @@
-# Meeting Room — 项目上下文
+# Meeting Room 2 — 项目上下文
 
 ## 项目概述
 基于 WebRTC 的多人实时语音频道应用，支持语音通话、屏幕共享和文字聊天。
@@ -12,7 +12,7 @@
 - **数据持久化**：JSON 文件（data/channels.json, data/messages.json）
 
 ## 关键命令
-- `npm start` — 启动 HTTPS 服务器（端口 6789）
+- `npm start` — 启动 HTTPS 服务器（端口 6800）
 - `npm test` — 运行 36 项自动化测试（需要服务器先运行）
 - `node -c public/app.js` — 语法检查（仅检查语法，不检查运行时错误）
 
@@ -81,4 +81,4 @@ npm test     # 运行 36 项测试
 ## 部署
 - systemd 服务：`systemctl restart meeting-room`
 - HTTPS 内置（config.json 配置 SSL 证书）
-- 外网访问：https://onkn.cn:6789
+- 外网访问：https://onkn.cn:6800

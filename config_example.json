@@ -1,5 +1,5 @@
 {
-  "port": 6789,
+  "port": 6800,
   "host": "0.0.0.0",
   "domain": "onkn.cn",
   "ssl": {

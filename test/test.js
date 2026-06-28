@@ -2,13 +2,13 @@
  * Meeting Room 自动化测试套件
  * 
  * 运行方式: npm test
- * 要求: 服务器必须在 localhost:6789 运行
+ * 要求: 服务器必须在 localhost:6800 运行
  */
 
 const { io } = require('socket.io-client');
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-const URL = 'https://localhost:6789';
+const URL = 'https://localhost:6800';
 let passed = 0, failed = 0, total = 0;
 const failures = [];
 
