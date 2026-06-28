@@ -807,7 +807,7 @@ function generateRoomId() {
 }
 
 const os = require('os');
-const PORT = config.port || 6789;
+const PORT = config.port || 6800;
 const HOST = config.host || '0.0.0.0';
 const DOMAIN = config.domain || 'localhost';
 
