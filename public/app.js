@@ -19,6 +19,7 @@ let micGainNode = null;
 let micGainDest = null;
 let audioMixDest = null;  // 最终混合输出（麦克风 + 屏幕音频）
 const remoteAudioElements = new Set(); // 追踪远程音频元素
+const remoteAudioByUser = new Map(); // BUGFIX: M11 按用户名索引 Audio 元素
 
 // ====== C4: 常量定义 ======
 const DEBOUNCE_SAVE_MS = 1000;
@@ -125,6 +126,8 @@ const screenShareContainer = document.getElementById('screenShareContainer');
 const remoteScreenVideo = document.getElementById('remoteScreenVideo');
 const screenSharingUser = document.getElementById('screenSharingUser');
 const screenFullscreenBtn = document.getElementById('screenFullscreenBtn');
+const screenOrientationBtn = document.getElementById('screenOrientationBtn');
+const toggleOrientationBtn = document.getElementById('toggleOrientationBtn');
 const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebarToggle');
 
@@ -2038,6 +2041,7 @@ function cleanupAllMedia() {
         audio.pause();
     });
     remoteAudioElements.clear();
+    remoteAudioByUser.clear(); // BUGFIX: M11 同步清理
     // 断开 Web Audio 节点（不关闭 audioContext，因为可能重用）
     if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
     if (micGainDest) { try { micGainDest.disconnect(); } catch(e) {} micGainDest = null; }
@@ -2171,13 +2175,24 @@ async function toggleAudio() {
             
             // 填充所有已有的 PeerConnection 的音频
             peerConnections.forEach((pc, peerId) => {
-                const senders = pc.getSenders();
-                const audioSender = senders.find(s => s.track?.kind === 'audio') ||
-                                   senders.find(s => s.track === null && s.receiver?.kind === 'audio');
-                console.log('[Audio] peer:', peerId, 'audioSender:', !!audioSender, 'track:', audioSender?.track?.kind || 'null');
+                // BUGFIX: M10 用 getTransceivers() 查找音轨 sender，RTCRtpSender 没有 .receiver 属性
+                const transceivers = pc.getTransceivers().map(t => ({
+                    mid: t.mid, dir: t.direction,
+                    recvKind: t.receiver?.track?.kind || 'none',
+                    sendTrackKind: t.sender?.track?.kind || 'none'
+                }));
+                console.log('[Audio] peer:', peerId, 'transceivers:', JSON.stringify(transceivers));
+                const audioTransceiver = pc.getTransceivers().find(t => t.receiver?.track?.kind === 'audio');
+                const audioSender = audioTransceiver ? audioTransceiver.sender : null;
+                // 备选：从 senders 中按 track.kind 查找（addTrack 创建的 sender）
+                const fallbackSender = !audioSender ? pc.getSenders().find(s => s.track?.kind === 'audio') || null : null;
+                // BUGFIX: M13 兜底：找 track===null 的 sender（addTransceiver 创建的 sender）
+                const nullTrackSender = (!audioSender && !fallbackSender) ? pc.getSenders().find(s => s.track === null) || null : null;
+                const finalSender = audioSender || fallbackSender || nullTrackSender;
+                console.log('[Audio] peer:', peerId, 'audioSender:', !!finalSender, 'track:', finalSender?.track?.kind || 'null', 'fallback:', !!fallbackSender, 'nullTrack:', !!nullTrackSender);
                 
-                if (audioSender) {
-                    audioSender.replaceTrack(sendTrack).then(() => {
+                if (finalSender) {
+                    finalSender.replaceTrack(sendTrack).then(() => {
                         console.log('[Audio] replaceTrack 成功');
                         // BUGFIX: B1 renegotiate 错误处理
                         renegotiate(pc, peerId).catch(e => console.warn('[WebRTC] renegotiate:', e.message || e));
@@ -2825,18 +2840,28 @@ function createPeerConnection(remoteUserName) {
                 updateParticipantsDisplay();
             };
         } else if (event.track.kind === 'audio') {
-            const audio = new Audio();
+            // BUGFIX: M11 复用同一用户的 Audio 元素，避免双 transceiver 时多个 ontrack 互相覆盖
+            let audio = remoteAudioByUser.get(remoteUserName);
+            if (!audio) {
+                audio = new Audio();
+                audio.id = 'remote-audio-' + remoteUserName;
+                remoteAudioByUser.set(remoteUserName, audio);
+                remoteAudioElements.add(audio);
+            }
             audio.srcObject = stream;
             audio.muted = !videoEnabled;
-            audio.id = 'remote-audio-' + remoteUserName + '-' + Date.now();
             // iOS Safari 拦截 autoplay，需要显式 play()
             audio.play().catch(err => {
-                console.warn('远程音频自动播放被阻止，等待用户交互:', err);
+                // BUGFIX: M11 renegotiate 期间 play() 被 pause() 打断是正常行为，不报 warning
+                if (err.name !== 'AbortError') {
+                    console.warn('远程音频自动播放被阻止:', err.name, err.message);
+                }
             });
-            remoteAudioElements.add(audio);
-            // 音轨结束时清理
+            // BUGFIX: M12 只有 own track 还在 srcObject 中时才清理，port-9 死音轨不污染有效音轨
             event.track.onended = () => {
-                remoteAudioElements.delete(audio);
+                if (audio.srcObject && audio.srcObject.getAudioTracks().includes(event.track)) {
+                    audio.srcObject = null;
+                }
             };
         }
     };
@@ -2979,6 +3004,66 @@ function toggleScreenFullscreen() {
         }
     }
 }
+
+// ====== 横竖屏切换（Screen Orientation API） ======
+function toggleOrientation() {
+    if (!screen.orientation || typeof screen.orientation.lock !== 'function') return;
+
+    const isLandscape = window.innerWidth > window.innerHeight;
+    const targetOrientation = isLandscape ? 'portrait' : 'landscape';
+
+    screen.orientation.lock(targetOrientation).catch(err => {
+        console.warn('[Orientation] 锁定失败:', err.name, err.message);
+    });
+}
+
+// 更新 orientation 按钮图标
+function updateOrientationBtnIcon() {
+    const isLandscape = window.innerWidth > window.innerHeight;
+    const isMobile = window.innerWidth <= 768;
+    const btns = [screenOrientationBtn, toggleOrientationBtn].filter(Boolean);
+
+    btns.forEach(btn => {
+        if (!btn) return;
+        btn.classList.remove('portrait', 'landscape');
+        btn.classList.add(isLandscape ? 'landscape' : 'portrait');
+
+        // 更新 title
+        btn.title = isLandscape ? '锁定竖屏' : '锁定横屏';
+
+        // 更新 SVG 图标方向
+        const rect = btn.querySelector('svg rect');
+        if (rect) {
+            rect.setAttribute('transform',
+                isLandscape ? 'rotate(90 12 12)' : 'rotate(0 12 12)');
+        }
+    });
+}
+
+if (screenOrientationBtn) {
+    screenOrientationBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleOrientation();
+    });
+}
+
+if (toggleOrientationBtn) {
+    toggleOrientationBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleOrientation();
+    });
+}
+
+// 监听 orientation / resize 事件更新图标
+window.addEventListener('orientationchange', () => {
+    setTimeout(updateOrientationBtnIcon, 200);
+});
+window.addEventListener('resize', () => {
+    const isMobile = window.innerWidth <= 768;
+    if (isMobile) updateOrientationBtnIcon();
+});
+// 初始更新
+setTimeout(updateOrientationBtnIcon, 500);
 
 // BUGFIX: H3 刷新 ICE 候选队列
 async function flushPendingCandidates(peerName) {
