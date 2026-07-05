@@ -1,5 +1,5 @@
 {
-  "name": "meeting-room",
+  "name": "meeting-room2",
   "version": "1.0.0",
   "description": "多人会议室软件 - 支持屏幕共享和语音通话",
   "main": "server.js",

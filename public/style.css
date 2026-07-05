@@ -9,6 +9,7 @@ body {
     background: #202225;
     color: #dcddde;
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
@@ -631,6 +632,21 @@ body {
     border-top: 1px solid #202225;
     background: #2f3136;
     flex-shrink: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* 控制栏自动隐藏：下沉到视口外，鼠标移到底部区域时浮现 */
+.main-controls.auto-hidden {
+    opacity: 0;
+    transform: translateY(100%);
+    pointer-events: none;
+}
+
+/* JS 添加 controls-hover-zone 类时浮现 */
+.main-controls.auto-hidden.controls-hover-zone {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
 .control-btn-wrapper {
@@ -850,6 +866,7 @@ body {
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s;
+    white-space: nowrap;
 }
 
 .placeholder-btn:hover {
@@ -983,6 +1000,51 @@ body {
 .screen-minimize-btn svg {
     width: 24px;
     height: 24px;
+}
+
+/* 横竖屏切换按钮（全屏 overlay，位于缩小和全屏之间） */
+.screen-orientation-btn {
+    position: absolute;
+    top: 12px;
+    right: 116px;
+    width: 44px;
+    height: 44px;
+    background: rgba(0,0,0,0.7);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    z-index: 6;
+}
+
+.screen-orientation-btn:hover {
+    background: rgba(0,0,0,0.85);
+}
+
+.screen-orientation-btn:active {
+    background: rgba(0,0,0,0.9);
+}
+
+.screen-orientation-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+.screen-orientation-btn.portrait svg rect {
+    transform: rotate(0deg);
+}
+
+.screen-orientation-btn.landscape svg rect {
+    transform: rotate(90deg);
+}
+
+/* 控制栏中的 orientation 按钮（移动端显示） */
+.orientation-btn {
+    display: none;
 }
 
 /* 最小化浮窗状态 */
@@ -1589,6 +1651,11 @@ body {
         padding: 10px 20px;
         font-size: 14px;
     }
+    
+    /* 移动端显示 orientation 切换按钮 */
+    .orientation-btn {
+        display: flex !important;
+    }
 }
 
 @media only screen and (max-width: 480px) {
@@ -1872,7 +1939,6 @@ body {
     gap: 8px;
     border-top: 1px solid #202225;
     margin-top: auto;
-    margin-bottom: 26px;
 }
 
 .chat-file-btn {
@@ -2623,6 +2689,11 @@ body {
     .resize-handle-v:hover {
         background: rgba(88, 101, 242, 0.3);
     }
+    
+    /* 横屏：侧边栏和聊天栏都隐藏时，隐藏占位按钮区 */
+    .room.panels-hidden .placeholder-actions {
+        display: none;
+    }
 }
 
 /* iPhone 横屏特定适配 */
@@ -2664,6 +2735,7 @@ body {
     touch-action: none;
     position: relative;
     z-index: 5;
+    transition: opacity 0.3s ease;
 }
 
 .header-drag-handle::after {
