@@ -95,8 +95,8 @@ const channelList = [];
 // BUGFIX: R1 初始化默认 ICE 服务器，防止 fetch 未完成时 PeerConnection 无 STUN/TURN
 // W2: TURN 服务器占位 — 如需 NAT 穿透支持，部署 coturn 后在 config.json 的 iceServers 中添加：
 //   { urls: 'turn:你的域名:3478', username: '用户名', credential: '密码' }
+// BUGFIX: A1 移除 iceCandidatePoolSize，避免预收集候选时排除 TURN 中继候选
 let configuration = {
-    iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     iceTransportPolicy: 'all',
@@ -2368,11 +2368,18 @@ async function toggleDenoise() {
             // 更新本地流
             localStream.addTrack(sendTrack);
             
-            // 替换所有 PeerConnection 中的音轨
+            // BUGFIX: A3 替换所有 PeerConnection 中的音轨（三重兜底，不遗漏 null-track sender）
             peerConnections.forEach((pc) => {
-                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-                if (sender) {
-                    sender.replaceTrack(sendTrack).catch(e => console.warn('降噪切换 replaceTrack 失败:', e));
+                const audioTransceiver = pc.getTransceivers()
+                    .find(t => t.receiver?.track?.kind === 'audio');
+                const audioSender = audioTransceiver ? audioTransceiver.sender : null;
+                const fallbackSender = !audioSender
+                    ? pc.getSenders().find(s => s.track?.kind === 'audio') || null : null;
+                const nullTrackSender = (!audioSender && !fallbackSender)
+                    ? pc.getSenders().find(s => s.track === null) || null : null;
+                const finalSender = audioSender || fallbackSender || nullTrackSender;
+                if (finalSender) {
+                    finalSender.replaceTrack(sendTrack).catch(e => console.warn('降噪切换 replaceTrack 失败:', e));
                 }
             });
             
@@ -2906,27 +2913,36 @@ function createPeerConnection(remoteUserName) {
                 updateParticipantsDisplay();
             };
         } else if (event.track.kind === 'audio') {
-            // BUGFIX: M11 复用同一用户的 Audio 元素，避免双 transceiver 时多个 ontrack 互相覆盖
+            // BUGFIX: A2 双防御：复用 Audio 元素 + 共享 MediaStream（不覆盖已有有效音轨）
+            // 如果远端有双 m=audio bug，两个 ontrack 都会把 track 加入同一个共享流，
+            // 死 track 贡献静音，活 track 贡献真实音频 → 用户始终能听到声音
             let audio = remoteAudioByUser.get(remoteUserName);
             if (!audio) {
                 audio = new Audio();
                 audio.id = 'remote-audio-' + remoteUserName;
+                audio.srcObject = new MediaStream(); // 初始化为空共享流
                 remoteAudioByUser.set(remoteUserName, audio);
                 remoteAudioElements.add(audio);
             }
-            audio.srcObject = stream;
+            // 向共享流中添加 track（重复 add 是 no-op）
+            if (audio.srcObject && !audio.srcObject.getAudioTracks().includes(event.track)) {
+                audio.srcObject.addTrack(event.track);
+            }
             audio.muted = !videoEnabled;
             // iOS Safari 拦截 autoplay，需要显式 play()
             audio.play().catch(err => {
-                // BUGFIX: M11 renegotiate 期间 play() 被 pause() 打断是正常行为，不报 warning
+                // BUGFIX: A2 renegotiate 期间 play() 被 pause()/AbortError 打断是正常行为
                 if (err.name !== 'AbortError') {
                     console.warn('远程音频自动播放被阻止:', err.name, err.message);
                 }
             });
-            // BUGFIX: M12 只有 own track 还在 srcObject 中时才清理，port-9 死音轨不污染有效音轨
+            // track 结束时从共享流中移除；只有所有 track 都结束才清空 srcObject
             event.track.onended = () => {
-                if (audio.srcObject && audio.srcObject.getAudioTracks().includes(event.track)) {
-                    audio.srcObject = null;
+                if (audio.srcObject) {
+                    try { audio.srcObject.removeTrack(event.track); } catch(e) {}
+                    if (audio.srcObject.getAudioTracks().length === 0) {
+                        audio.srcObject = null;
+                    }
                 }
             };
         }
