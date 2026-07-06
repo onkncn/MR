@@ -147,6 +147,9 @@ const remoteScreenVideo = document.getElementById('remoteScreenVideo');
 const screenSharingUser = document.getElementById('screenSharingUser');
 const screenFullscreenBtn = document.getElementById('screenFullscreenBtn');
 const screenOrientationBtn = document.getElementById('screenOrientationBtn');
+const screenStopViewBtn = document.getElementById('screenStopViewBtn');
+const screenResumeBar = document.getElementById('screenResumeBar');
+const screenResumeBarList = document.getElementById('screenResumeBarList');
 const toggleOrientationBtn = document.getElementById('toggleOrientationBtn');
 const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebarToggle');
@@ -725,6 +728,12 @@ sidebarToggle.addEventListener('click', toggleSidebar);
 })();
 
 screenFullscreenBtn.addEventListener('click', toggleScreenFullscreen);
+if (screenStopViewBtn) {
+    screenStopViewBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        stopWatchingScreen();
+    });
+}
 
 // 缩小/恢复屏幕共享浮窗（独立元素挂在body，兼容iOS）
 const screenMinimizeBtn = document.getElementById('screenMinimizeBtn');
@@ -1830,6 +1839,41 @@ function hideSelfScreenPreviewPauseBtn() {
     if (btn) btn.classList.add('hidden');
 }
 
+// BUGFIX: V1 停止观看屏幕共享（释放视频资源，降低占用，共享保持连接）
+function stopWatchingScreen() {
+    // 清理浮窗
+    if (minimizedThumb) {
+        minimizedThumb.querySelector('video').srcObject = null;
+        minimizedThumb.remove();
+        minimizedThumb = null;
+    }
+    // 释放视频资源
+    if (remoteScreenVideo.srcObject) {
+        remoteScreenVideo.pause();
+        remoteScreenVideo.srcObject = null;
+        remoteScreenVideo.removeAttribute('src');
+        remoteScreenVideo.load();
+    }
+    if (viewingScreenOf === userName) {
+        selfScreenPreviewEnabled = false;
+    }
+    viewingScreenOf = null;
+    hideSelfScreenPreviewPrompt();
+    hideSelfScreenPreviewPauseBtn();
+    screenShareContainer.classList.add('hidden');
+    screenShareContainer.classList.remove('self-preview-paused');
+    // 更新恢复条和参与者显示
+    updateScreenShareBar();
+    updateParticipantsDisplay();
+    console.log('[Screen] 已停止观看，资源已释放，共享仍在进行中');
+}
+
+// 恢复观看：点击恢复条中的头像
+function resumeWatchingScreen(targetUser) {
+    if (!targetUser) return;
+    switchScreenView(targetUser);
+}
+
 function showOwnScreenShareStatus() {
     if (!screenSharing || !screenStream) return;
     viewingScreenOf = null;
@@ -1965,6 +2009,39 @@ function updateScreenShareBar() {
         dot.addEventListener('click', () => switchScreenView(sharers[i]));
         indicator.appendChild(dot);
     });
+    
+    // BUGFIX: V1 当用户停止观看但仍有共享者时，显示恢复观看条
+    if (!screenResumeBar || !screenResumeBarList) return;
+    // 收集所有共享者
+    const allSharers = [];
+    if (screenSharing) allSharers.push(userName);
+    screenStreams.forEach((_, name) => {
+        if (name !== userName && !allSharers.includes(name)) allSharers.push(name);
+    });
+    // viewingScreenOf === null 且仍有共享者 → 显示恢复条
+    if (viewingScreenOf === null && allSharers.length > 0) {
+        screenResumeBar.classList.remove('hidden');
+        screenResumeBarList.innerHTML = '';
+        allSharers.forEach(name => {
+            const isSelf = name === userName;
+            const item = document.createElement('div');
+            item.className = 'screen-resume-bar-item';
+            const avatar = document.createElement('div');
+            avatar.className = 'screen-resume-bar-avatar';
+            avatar.textContent = name.charAt(0).toUpperCase();
+            const nameEl = document.createElement('span');
+            nameEl.className = 'screen-resume-bar-name';
+            nameEl.textContent = isSelf ? name + ' (你)' : name;
+            item.appendChild(avatar);
+            item.appendChild(nameEl);
+            item.addEventListener('click', () => {
+                resumeWatchingScreen(name);
+            });
+            screenResumeBarList.appendChild(item);
+        });
+    } else {
+        screenResumeBar.classList.add('hidden');
+    }
 }
 
 // 屏幕共享区域左右滑动手势

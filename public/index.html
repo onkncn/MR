@@ -140,6 +140,12 @@
                             <div class="screen-share-label">
                                 <span id="screenSharingUser">用户</span> 的屏幕
                             </div>
+                            <button id="screenStopViewBtn" class="screen-stop-view-btn" title="停止观看（释放资源）">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
                             <button id="screenMinimizeBtn" class="screen-minimize-btn" title="缩小">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -166,6 +172,10 @@
                         </div>
                         <!-- 滑动指示器 -->
                         <div id="screenSwipeIndicator" class="screen-swipe-indicator hidden"></div>
+                    </div>
+                    <!-- BUGFIX: V1 停止观看后显示恢复条 -->
+                    <div id="screenResumeBar" class="screen-resume-bar hidden">
+                        <div id="screenResumeBarList" class="screen-resume-bar-list"></div>
                     </div>
                 </div>
             </div>

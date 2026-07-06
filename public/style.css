@@ -1111,6 +1111,34 @@ body {
     transform: rotate(90deg);
 }
 
+/* 停止观看按钮（释放视频资源，降低占用） */
+.screen-stop-view-btn {
+    position: absolute;
+    top: 12px;
+    right: 168px;
+    width: 44px;
+    height: 44px;
+    background: rgba(0,0,0,0.7);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    z-index: 6;
+}
+
+.screen-stop-view-btn:hover {
+    background: rgba(255,50,50,0.8);
+}
+
+.screen-stop-view-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
 /* 控制栏中的 orientation 按钮（移动端显示） */
 .orientation-btn {
     display: none;
@@ -1147,6 +1175,69 @@ body {
     background: #3ba55c;
     border-radius: 50%;
     pointer-events: none;
+}
+
+/* BUGFIX: V1 停止观看后显示恢复观看条 */
+.screen-resume-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #2d2d2d;
+    border-radius: 8px;
+    margin-top: 8px;
+    align-items: center;
+}
+
+.screen-resume-bar::before {
+    content: '📺 正在共享 — 点击恢复观看';
+    color: #888;
+    font-size: 12px;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+
+.screen-resume-bar-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.screen-resume-bar-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 16px;
+    background: rgba(59,165,92,0.2);
+    border: 1px solid rgba(59,165,92,0.4);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.screen-resume-bar-item:hover {
+    background: rgba(59,165,92,0.4);
+    border-color: #3ba55c;
+}
+
+.screen-resume-bar-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #3ba55c;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.screen-resume-bar-name {
+    color: #ccc;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
 .screen-play-overlay {
@@ -2352,6 +2443,10 @@ body {
     }
     
     .screen-minimize-btn {
+        display: flex;
+    }
+    
+    .screen-stop-view-btn {
         display: flex;
     }
     
