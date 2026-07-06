@@ -62,6 +62,26 @@ function saveState(key, value) {
 }
 
 loadSavedState();
+// BUGFIX: C5 iOS 兼容的 alert/toast 封装 — 在非手势上下文使用自定义 toast 替代 alert()
+function showAlert(msg, title) {
+    if (isIOS()) {
+        // iOS: 创建 toast 风格提示
+        let toast = document.getElementById('__iosToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = '__iosToast';
+            toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;max-width:85vw;text-align:center;z-index:99999;transition:opacity 0.3s;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = title ? title + ': ' + msg : msg;
+        toast.style.opacity = '1';
+        clearTimeout(toast._hideTimer);
+        toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+    } else {
+        alert(msg);
+    }
+}
+
 let currentScreenSharer = null;
 let participants = new Map();
 const peerConnections = new Map();
@@ -174,6 +194,15 @@ let chatMessagesList = [];
 let contextMenuChannel = null;
 let pendingJoinChannel = null; // BUGFIX: C2 存储待加入频道名
 let createToken = null; // BUGFIX: B6 创建频道令牌，用于确认是自己创建的频道
+let renameTargetChannel = null; // BUGFIX: C5 重命名目标频道（null=当前频道，对象=其他频道）
+// BUGFIX: C5 密码模态框相关
+const joinPasswordModal = document.getElementById('joinPasswordModal');
+const joinPasswordInput = document.getElementById('joinPasswordInput');
+const joinPasswordTitle = document.getElementById('joinPasswordTitle');
+const closeJoinPasswordModal = document.getElementById('closeJoinPasswordModal');
+const cancelJoinPasswordBtn = document.getElementById('cancelJoinPasswordBtn');
+const confirmJoinPasswordBtn = document.getElementById('confirmJoinPasswordBtn');
+let joinPasswordResolver = null; // Promise resolver for password modal
 
 // BUGFIX: B5 页面关闭时释放 AudioContext
 window.addEventListener('beforeunload', () => {
@@ -267,7 +296,9 @@ document.addEventListener('visibilitychange', async () => {
     });
 });
 
-if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => {};
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.addEventListener('voiceschanged', () => {});
+}
 
 // 有缓存用户名时自动登录
 if (userNameInput && userNameInput.value.trim()) {
@@ -344,13 +375,15 @@ window.addEventListener('resize', () => {
     }
 });
 window.addEventListener('orientationchange', () => {
-    // iOS 锁屏解锁后 orientationchange + resize 可能丢失
-    // 延迟重试确保布局更新
-    [100, 300, 600].forEach(delay => {
-        setTimeout(() => {
-            window.dispatchEvent(new Event('resize'));
-        }, delay);
-    });
+    // BUGFIX: C5 iOS 锁屏解锁后三重 dispatch + requestAnimationFrame 防抖
+    let frameId;
+    const fireResize = () => {
+        cancelAnimationFrame(frameId);
+        frameId = requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    };
+    fireResize();
+    setTimeout(fireResize, 300);
+    setTimeout(fireResize, 600);
 });
 
 // ====== 横屏上滑隐藏频道名 ======
@@ -444,6 +477,7 @@ if (toggleTtsBtn) {
 }
 toggleChatExpandBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (!currentChannel) return; // BUGFIX: C6 不在频道中不可切换到仅聊天模式
     room.classList.add('chat-only');
     toggleChatExpandBtn.classList.add('active');
 });
@@ -826,7 +860,7 @@ cancelRenameBtn.addEventListener('click', () => closeModal(renameModal));
 renameBtn.addEventListener('click', () => {
     if (currentChannel) {
         renameChannelInput.value = currentChannel.name;
-        renameModal._targetChannel = null; // null 表示重命名当前频道
+        renameTargetChannel = null; // null 表示重命名当前频道
         openModal(renameModal);
     }
 });
@@ -1482,7 +1516,7 @@ function logout() {
 
 function updateChannelList() {
     channelListEl.innerHTML = '';
-    
+
     if (channelList.length === 0) {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding: 16px; text-align: center; color: #8e9297; font-size: 14px;';
@@ -1490,7 +1524,8 @@ function updateChannelList() {
         channelListEl.appendChild(empty);
         return;
     }
-    
+
+    const fragment = document.createDocumentFragment();
     channelList.forEach(channel => {
         const isActive = currentChannel && currentChannel.id === channel.id;
         const item = document.createElement('div');
@@ -1597,8 +1632,9 @@ function updateChannelList() {
         item.addEventListener('touchend', () => clearTimeout(longPressTimer));
         item.addEventListener('touchmove', () => clearTimeout(longPressTimer));
         
-        channelListEl.appendChild(item);
+        fragment.appendChild(item);
     });
+    channelListEl.appendChild(fragment);
 }
 
 // 右键菜单相关函数
@@ -1622,9 +1658,8 @@ function hideContextMenu() {
 ctxRename.addEventListener('click', () => {
     if (contextMenuChannel) {
         renameChannelInput.value = contextMenuChannel.name;
+        renameTargetChannel = contextMenuChannel; // BUGFIX: C5 闭包变量存储目标频道
         openModal(renameModal);
-        // 保存待重命名频道（不一定正在该频道中）
-        renameModal._targetChannel = contextMenuChannel;
     }
     hideContextMenu();
 });
@@ -1656,7 +1691,7 @@ document.addEventListener('scroll', hideContextMenu, true);
 
 // 重命名支持跨频道（从右键菜单触发时）
 confirmRenameBtn.addEventListener('click', (e) => {
-    const target = renameModal._targetChannel;
+    const target = renameTargetChannel; // BUGFIX: C5 改用闭包变量
     const name = renameChannelInput.value.trim();
     if (!name) {
         alert('请输入新频道名称');
@@ -1668,7 +1703,7 @@ confirmRenameBtn.addEventListener('click', (e) => {
             currentChannel.name = name;
             currentChannelName.textContent = name;
         }
-        renameModal._targetChannel = null;
+        renameTargetChannel = null;
     } else if (currentChannel) {
         socket.emit('rename-channel', currentChannel.id, name);
         currentChannel.name = name;
@@ -1676,6 +1711,35 @@ confirmRenameBtn.addEventListener('click', (e) => {
     }
     updateChannelList();
     closeModal(renameModal);
+});
+
+// BUGFIX: C5 密码模态框事件
+function showPasswordModal(channelName) {
+    return new Promise((resolve) => {
+        joinPasswordTitle.textContent = `输入频道「${channelName}」的密码`;
+        joinPasswordInput.value = '';
+        joinPasswordResolver = resolve;
+        openModal(joinPasswordModal);
+        setTimeout(() => joinPasswordInput.focus(), 100);
+    });
+}
+
+closeJoinPasswordModal.addEventListener('click', () => {
+    joinPasswordInput.value = '';
+    closeModal(joinPasswordModal);
+    if (joinPasswordResolver) { joinPasswordResolver(null); joinPasswordResolver = null; }
+});
+cancelJoinPasswordBtn.addEventListener('click', () => {
+    closeModal(joinPasswordModal);
+    if (joinPasswordResolver) { joinPasswordResolver(null); joinPasswordResolver = null; }
+});
+confirmJoinPasswordBtn.addEventListener('click', () => {
+    const pwd = joinPasswordInput.value;
+    closeModal(joinPasswordModal);
+    if (joinPasswordResolver) { joinPasswordResolver(pwd || ''); joinPasswordResolver = null; }
+});
+joinPasswordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmJoinPasswordBtn.click();
 });
 
 function updateParticipantsDisplay() {
@@ -1985,10 +2049,10 @@ async function joinChannel(channel) {
         audioEnabled = savedMicState;
         audioTrack = null;
 
-        // BUGFIX: L5 密码保护频道先询问密码
+        // BUGFIX: L5/C5 密码保护频道用模态框替代 prompt()（iOS Safari 兼容）
         let password = '';
         if (channel.hasPassword) {
-            password = prompt(`请输入频道「${channel.name}」的密码：`);
+            password = await showPasswordModal(channel.name);
             if (password === null) {
                 document.body.style.cursor = '';
                 joiningChannel = false; // BUGFIX: R7
@@ -2008,7 +2072,7 @@ async function joinChannel(channel) {
         }
     } catch (err) {
         console.error('加入频道失败:', err);
-        alert('加入频道失败');
+        showAlert('加入频道失败');
     } finally {
         document.body.style.cursor = '';
         joiningChannel = false; // BUGFIX: R7
@@ -2214,7 +2278,7 @@ async function toggleAudio() {
             audioEnabled = true;
         } catch (err) {
             console.error('获取麦克风失败:', err);
-            alert('无法访问麦克风，请允许权限\n\n' + (err.name || err.message || err));
+            showAlert('无法访问麦克风，请允许权限: ' + (err.name || err.message || err));
             return;
         }
     } else {
@@ -2276,12 +2340,12 @@ async function toggleDenoise() {
             const newTrack = newStream.getAudioTracks()[0];
             newTrack.enabled = audioEnabled;
             
-            // 替换本地流中的音轨
+            // BUGFIX: C5 降噪切换：先接新 track 再停旧 track，避免对方短暂无音频
+            const oldTrack = audioTrack;
             const oldSendTrack = localStream.getAudioTracks()[0];
-            if (oldSendTrack) localStream.removeTrack(oldSendTrack);
-            audioTrack.stop();
             audioTrack = newTrack;
-            
+            if (oldSendTrack) localStream.removeTrack(oldSendTrack);
+
             let sendTrack;
             
             if (mobile) {
@@ -2314,6 +2378,8 @@ async function toggleDenoise() {
             
             console.log('AI降噪', denoiseEnabled ? '已开启' : '已关闭');
             console.log('Track settings:', newTrack.getSettings());
+            // 等新 track 就位后再停旧 track
+            if (oldTrack && oldTrack !== audioTrack) oldTrack.stop();
         } catch (err) {
             console.error('切换降噪失败:', err);
             denoiseEnabled = !denoiseEnabled;
@@ -2870,14 +2936,21 @@ function createPeerConnection(remoteUserName) {
         console.log(`与 ${remoteUserName} 的连接状态:`, pc.connectionState);
         // BUGFIX: W1 短暂断开时等待5秒后尝试 ICE 重启，而非直接放弃
         if (pc.connectionState === 'disconnected') {
-            setTimeout(() => {
+            pc._disconnectTimer = setTimeout(() => {
                 if (pc.connectionState === 'disconnected' && peerConnections.has(remoteUserName)) {
                     console.log(`[W1] ${remoteUserName} 持续断开，尝试 ICE 重启`);
-                    pc.restartIce();
+                    // BUGFIX: C6 仅在 signalingState=stable 时调用 restartIce
+                    if (pc.signalingState === 'stable') {
+                        pc.restartIce();
+                    }
                     createOfferAndSend(pc, remoteUserName).catch(e =>
                         console.warn('[W1] ICE 重启后 offer 失败:', e.message || e));
                 }
+                pc._disconnectTimer = null;
             }, 5000);
+        } else {
+            // BUGFIX: C6 清除断开定时器，避免 stale timer 在状态变化后仍触发
+            if (pc._disconnectTimer) { clearTimeout(pc._disconnectTimer); pc._disconnectTimer = null; }
         }
         // BUGFIX: M8 failed 状态清理 PC 和相关资源
         if (pc.connectionState === 'failed') {
@@ -2895,6 +2968,7 @@ function createPeerConnection(remoteUserName) {
                     remoteAudioElements.delete(audio);
                 }
             });
+            remoteAudioByUser.delete(remoteUserName); // BUGFIX: C6 同步清理索引
             screenStreams.delete(remoteUserName);
             updateScreenShareBar();
             if (viewingScreenOf === remoteUserName) {
@@ -3082,10 +3156,10 @@ async function flushPendingCandidates(peerName) {
     }
 }
 
-socket.on('join-error', (msg) => {
-    // BUGFIX: L5 密码错误时允许重试
+socket.on('join-error', async (msg) => {
+    // BUGFIX: L5/C5 密码错误时用模态框重试替代 prompt()
     if (msg === '密码错误' && currentChannel) {
-        const retryPwd = prompt(`密码错误，请重新输入频道「${currentChannel.name}」的密码：`);
+        const retryPwd = await showPasswordModal(currentChannel.name);
         if (retryPwd) {
             socket.emit('join-channel', { channelId: currentChannel.id, password: retryPwd });
             return;
@@ -3097,7 +3171,7 @@ socket.on('join-error', (msg) => {
     document.body.style.cursor = '';
     updateParticipantsDisplay();
     updateChannelList();
-    alert('加入频道失败: ' + msg);
+    showAlert('加入频道失败: ' + msg);
 });
 
 socket.on('channel-list', (list) => {
@@ -3167,6 +3241,7 @@ socket.on('user-disconnected', (remoteUserName) => {
             remoteAudioElements.delete(audio);
         }
     });
+    remoteAudioByUser.delete(remoteUserName); // BUGFIX: C6 同步清理按用户名索引的 Map
 
     // 清理待处理的 ICE 候选
     pendingCandidates.delete(remoteUserName);
@@ -3202,10 +3277,10 @@ socket.on('offer', async (data) => {
     console.log('[收到offer] signalingState:', pc.signalingState);
     try {
         // BUGFIX: H2 处理 offer 冲突（glare）
-        // polite端（userName < data.from）执行 rollback，impolite端忽略本次 offer
+        // polite端（字典序较小的用户名）执行 rollback，避免比较不同类型数据
         if (pc.signalingState !== 'stable') {
             if (userName < data.from) {
-                console.log('[H2] polite端 rollback');
+                console.log('[H2] polite端 rollback,', userName, '<', data.from);
                 await pc.setLocalDescription({ type: 'rollback' });
             } else {
                 console.log('[H2] impolite端忽略冲突 offer from:', data.from);
@@ -3274,8 +3349,11 @@ socket.on('room-users', (users) => {
         
         if (name !== userName && !participants.has(name)) {
             participants.set(name, { audioEnabled: !isMuted, screenSharing: isSharing || false, muted: isMuted || false });
-        } else if (name !== userName && participants.has(name) && isMuted) {
-            participants.get(name).muted = isMuted;
+        } else if (name !== userName && participants.has(name)) {
+            // BUGFIX: C5 保持已有的 audioEnabled 不变，muted 是服务端静音标识
+            const p = participants.get(name);
+            p.muted = isMuted || false;
+            p.screenSharing = isSharing || false;
         }
     });
     updateParticipantsDisplay();
@@ -3678,7 +3756,7 @@ socket.on('connect', () => {
 // R3: 被踢出频道时更新 UI
 socket.on('kicked', async (data) => {
     console.log('[R3] 被踢出频道:', data.channel);
-    alert(`你已被房主请出频道「${data.channel}」`);
+    showAlert(`你已被房主请出频道「${data.channel}」`);
     if (currentChannel && currentChannel.name === data.channel) {
         // 清理本地状态（不发送 leave-channel，服务器已处理）
         // BUGFIX: B4 先 await stopScreenShare 再继续清理
@@ -3713,7 +3791,7 @@ socket.on('chat-history', (messages) => {
 socket.on('channel-removed', (data) => {
     console.log('[R3] 频道被删除:', data.reason);
     if (currentChannel) {
-        alert('当前频道已被删除');
+        showAlert('当前频道已被删除');
         currentChannel = null;
         participants.clear();
         peerConnections.forEach(pc => pc.close());

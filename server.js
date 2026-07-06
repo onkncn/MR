@@ -31,7 +31,13 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => { res.set('Cache-Control', 'no-store'); } }));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false, lastModified: false,
+  setHeaders: (res) => {
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss: https:; font-src 'self' data:;");
+  }
+}));
 
 // 提供 ICE 服务器配置给客户端
 app.get('/api/config', (req, res) => {
@@ -73,6 +79,7 @@ function debouncedSave() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
+    let retry = false;
     // BUGFIX: R8 仅在写入成功后才清除 dirty 标志，防止写失败丢数据
     if (channelsDirty) {
       try {
@@ -82,7 +89,7 @@ function debouncedSave() {
         });
         fs.writeFileSync(CHANNELS_FILE, JSON.stringify(obj, null, 2));
         channelsDirty = false;
-      } catch(e) { console.error('保存频道失败:', e); }
+      } catch(e) { console.error('保存频道失败:', e); retry = true; }
     }
     if (messagesDirty) {
       try {
@@ -90,8 +97,10 @@ function debouncedSave() {
         channelMessages.forEach((msgs, id) => { obj[id] = msgs; });
         fs.writeFileSync(MESSAGES_FILE, JSON.stringify(obj, null, 2));
         messagesDirty = false;
-      } catch(e) { console.error('保存消息失败:', e); }
+      } catch(e) { console.error('保存消息失败:', e); retry = true; }
     }
+    // 任一保存失败则重试
+    if (retry) setTimeout(debouncedSave, 2000);
   }, 1000);
 }
 
@@ -666,6 +675,11 @@ io.on('connection', (socket) => {
         }
       }
     }
+    // 清理该 socket 的速率限制条目
+    const prefix = socket.id + ':';
+    for (const [key] of rateLimitMap) {
+      if (key.startsWith(prefix)) rateLimitMap.delete(key);
+    }
     handleLeave(socket);
   });
 
@@ -801,7 +815,7 @@ function handleLeave(socket) {
 function generateRoomId() {
   let id;
   do {
-    id = Math.random().toString(36).substring(2, 8).toUpperCase();
+    id = crypto.randomBytes(4).toString('hex').toUpperCase();
   } while (channels.has(id));
   return id;
 }

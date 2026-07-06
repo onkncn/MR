@@ -350,6 +350,27 @@
             </div>
         </div>
     </div>
+    <!-- BUGFIX: C5 加入频道密码输入模态框，替代 prompt() -->
+    <div id="joinPasswordModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="joinPasswordTitle">输入频道密码</h3>
+                <button id="closeJoinPasswordModal" class="close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="password" id="joinPasswordInput" placeholder="请输入频道密码" class="modal-input">
+            </div>
+            <div class="modal-footer">
+                <button id="cancelJoinPasswordBtn" class="btn-secondary">取消</button>
+                <button id="confirmJoinPasswordBtn" class="btn-primary">加入</button>
+            </div>
+        </div>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
 </body>
