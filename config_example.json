@@ -27,5 +27,6 @@
   ],
   "cors": {
     "origin": "*"
-  }
+  },
+  "nukeSecret": "mr-nuke-default"
 }

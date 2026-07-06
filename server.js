@@ -31,6 +31,7 @@ const io = new Server(server, {
 });
 
 app.use(cors());
+app.use(express.json()); // BUGFIX: N1 解析 JSON body（用于 /api/nuke）
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false, lastModified: false,
   setHeaders: (res) => {
@@ -42,6 +43,62 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // 提供 ICE 服务器配置给客户端
 app.get('/api/config', (req, res) => {
   res.json({ iceServers: config.iceServers });
+});
+
+// BUGFIX: N1 清空所有频道/消息/连接，返回首页（部署前使用）
+app.post('/api/nuke', (req, res) => {
+  const secret = req.body?.secret;
+  const expectedSecret = config.nukeSecret || 'mr-nuke-default';
+  if (secret !== expectedSecret) {
+    console.warn('[Nuke] 密钥验证失败，来自:', req.ip);
+    return res.status(403).json({ error: 'unauthorized: invalid nukeSecret' });
+  }
+
+  console.log('[Nuke] 开始清空所有频道、消息、连接...');
+
+  // 1. 通知所有客户端被踢出（返回首页）
+  io.emit('nuked', { reason: '管理员已清空所有频道，即将返回首页' });
+
+  // 2. 踢出所有用户，清理频道状态
+  for (const [id, socket] of io.sockets.sockets) {
+    if (socket.currentChannel) {
+      socket.leave(socket.currentChannel);
+    }
+    socket.currentChannel = null;
+  }
+
+  // 3. 清理所有 delete 定时器
+  for (const [id, timer] of deleteTimers) {
+    clearTimeout(timer);
+  }
+  deleteTimers.clear();
+
+  // 4. 清空所有内存状态
+  channels.clear();
+  channelMessages.clear();
+  joinTimers.clear();
+  screenShareStatus.clear();
+  mutedUsers.clear();
+  typingUsers.clear();
+  activeUsernames.clear();
+  userSockets.clear();
+
+  // 5. 立即写入空文件（不走 debouncedSave）
+  try {
+    fs.writeFileSync(CHANNELS_FILE, JSON.stringify({}, null, 2));
+    fs.writeFileSync(MESSAGES_FILE, JSON.stringify({}, null, 2));
+    console.log('[Nuke] 数据文件已清空');
+  } catch (err) {
+    console.error('[Nuke] 文件写入失败:', err.message);
+    return res.status(500).json({ error: 'file write failed' });
+  }
+
+  // 6. 通知 channel-updated（清空频道列表）
+  io.emit('channel-updated', null);
+
+  const usersCount = io.sockets.sockets.size;
+  console.log(`[Nuke] 完成！已清空所有数据，${usersCount} 个连接已通知`);
+  res.json({ ok: true, message: `已清空所有频道、消息、连接（${usersCount} 个用户已通知）` });
 });
 
 // ====== 频道持久化 ======

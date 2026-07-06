@@ -3872,6 +3872,33 @@ socket.on('kicked', async (data) => {
     }
 });
 
+// BUGFIX: N1 管理员清空所有频道（nuke），返回首页
+socket.on('nuked', (data) => {
+    console.log('[Nuke] 管理员已清空所有频道:', data.reason);
+    showAlert(data.reason);
+    // 静默清理所有本地状态，不发网络请求
+    if (screenSharing) {
+        stopScreenShare().catch(e => console.warn('[Nuke] stopScreenShare:', e.message || e));
+    }
+    cleanupAllMedia();
+    currentChannel = null;
+    updateScreenShareBar();
+    remoteScreenVideo.srcObject = null;
+    showScreenShare(null);
+    room.classList.remove('chat-only');
+    if (toggleChatExpandBtn) toggleChatExpandBtn.classList.remove('active');
+    room.classList.add('no-channel');
+    channelPlaceholder.classList.remove('hidden');
+    participantsContainer.classList.add('hidden');
+    updateAudioButtons();
+    updateVideoButton();
+    toggleScreenShareBtn.classList.remove('screen-active');
+    currentChannelName.textContent = '选择一个频道';
+    updateParticipantsDisplay();
+    // 刷新频道列表（服务器已清空）
+    updateChannelList();
+});
+
 // R3: 聊天历史消息（加入频道时服务端发送）
 socket.on('chat-history', (messages) => {
     if (messages && messages.length > 0) {
