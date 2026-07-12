@@ -13,6 +13,16 @@ let ttsEnabled = true; // 聊天消息 TTS 播放状态
 const pendingTtsMessages = [];
 let ttsPromptEl = null;
 
+// 自定义音频播放器状态
+let customAudioBuffer = null;       // 解码后的 AudioBuffer
+let customAudioSource = null;       // 当前播放的 AudioBufferSourceNode
+let customAudioGainNode = null;     // 自定义音频增益节点
+let customAudioStartTime = 0;       // 播放开始时间（用于暂停/恢复）
+let customAudioPausedAt = 0;        // 暂停时的偏移量（秒）
+let customAudioPlaying = false;
+let customAudioDuration = 0;        // 音频总时长（秒）
+let customAudioTimeInterval = null;  // 时间更新定时器
+
 // Web Audio API — 麦克风音量增益 + 音频混合
 let audioContext = null;
 let micGainNode = null;
@@ -133,6 +143,15 @@ const toggleVideoBtn = document.getElementById('toggleVideoBtn');
 const toggleScreenShareBtn = document.getElementById('toggleScreenShareBtn');
 const toggleDenoiseBtn = document.getElementById('toggleDenoiseBtn');
 const toggleTtsBtn = document.getElementById('toggleTtsBtn');
+const toggleCustomAudioBtn = document.getElementById('toggleCustomAudioBtn');
+const customAudioPlayer = document.getElementById('customAudioPlayer');
+const customAudioFileInput = document.getElementById('customAudioFileInput');
+const customAudioName = document.getElementById('customAudioName');
+const customAudioTime = document.getElementById('customAudioTime');
+const customAudioPlayBtn = document.getElementById('customAudioPlayBtn');
+const customAudioStopBtn = document.getElementById('customAudioStopBtn');
+const customAudioVolume = document.getElementById('customAudioVolume');
+const customAudioCloseBtn = document.getElementById('customAudioCloseBtn');
 const toggleChatExpandBtn = document.getElementById('toggleChatExpandBtn');
 const placeholderCreateBtn = document.getElementById('placeholderCreateBtn');
 const placeholderSelectBtn = document.getElementById('placeholderSelectBtn');
@@ -2187,6 +2206,12 @@ function cleanupAllMedia() {
     if (micGainNode) { try { micGainNode.disconnect(); } catch(e) {} micGainNode = null; }
     if (micGainDest) { try { micGainDest.disconnect(); } catch(e) {} micGainDest = null; }
     if (audioMixDest) { try { audioMixDest.disconnect(); } catch(e) {} audioMixDest = null; }
+    // 清理自定义音频
+    stopCustomAudio();
+    customAudioBuffer = null;
+    customAudioDuration = 0;
+    if (customAudioPlayer) customAudioPlayer.classList.add('hidden');
+    if (toggleCustomAudioBtn) toggleCustomAudioBtn.classList.remove('active');
     // 清理其他状态
     pendingCandidates.clear();
     screenStreams.clear();
@@ -2482,6 +2507,284 @@ function updateDenoiseButton() {
         toggleDenoiseBtn.classList.remove('active');
         toggleDenoiseBtn.title = 'AI降噪（已关闭）';
     }
+}
+
+// ====== 自定义音频播放器 ======
+
+// 点击按钮打开文件选择器
+if (toggleCustomAudioBtn) {
+    toggleCustomAudioBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!currentChannel) {
+            alert('请先加入频道');
+            return;
+        }
+        // 动态创建文件输入以兼容 iOS Safari
+        if (customAudioFileInput) customAudioFileInput.remove();
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'customAudioFileInput';
+        input.accept = 'audio/*';
+        input.style.display = 'none';
+        input.addEventListener('change', handleCustomAudioFile);
+        document.body.appendChild(input);
+        // 重新获取引用
+        window._customAudioInput = input;
+        input.click();
+    });
+}
+
+// 处理音频文件选择
+function handleCustomAudioFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // 检查文件类型
+    const supportedTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm',
+        'audio/mp4', 'audio/aac', 'audio/flac', 'audio/x-wav', 'audio/mp3'];
+    const ext = file.name.split('.').pop().toLowerCase();
+    const supportedExts = ['mp3', 'wav', 'ogg', 'webm', 'm4a', 'aac', 'flac', 'opus'];
+    if (!supportedTypes.includes(file.type) && !supportedExts.includes(ext)) {
+        alert('不支持的音频格式。支持的格式：MP3、WAV、OGG、WebM、M4A、AAC、FLAC、Opus');
+        return;
+    }
+
+    // 检查文件大小（限制 30MB）
+    if (file.size > 30 * 1024 * 1024) {
+        alert('文件太大，请选择 30MB 以内的音频文件');
+        return;
+    }
+
+    // 停止当前播放
+    stopCustomAudio();
+
+    // 读取并解码音频文件
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+        try {
+            const arrayBuffer = ev.target.result;
+
+            // 确保 AudioContext 存在且运行
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            // 解码音频数据
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            customAudioBuffer = audioBuffer;
+            customAudioDuration = audioBuffer.duration;
+            customAudioPausedAt = 0;
+
+            // 显示播放器
+            customAudioName.textContent = file.name;
+            updateCustomAudioTime(0);
+            customAudioPlayer.classList.remove('hidden');
+            toggleCustomAudioBtn.classList.add('active');
+
+            console.log('[CustomAudio] 已加载:', file.name,
+                '时长:', audioBuffer.duration.toFixed(1) + 's',
+                '采样率:', audioBuffer.sampleRate + 'Hz',
+                '声道:', audioBuffer.numberOfChannels);
+        } catch (err) {
+            console.error('[CustomAudio] 解码失败:', err);
+            alert('音频解码失败: ' + (err.message || err));
+            cleanupCustomAudio();
+        }
+    };
+    reader.onerror = () => {
+        alert('文件读取失败');
+        cleanupCustomAudio();
+    };
+    reader.readAsArrayBuffer(file);
+
+    // 清理临时 input
+    setTimeout(() => { if (e.target) e.target.remove(); }, 100);
+}
+
+// 播放/暂停
+if (customAudioPlayBtn) {
+    customAudioPlayBtn.addEventListener('click', () => {
+        if (customAudioPlaying) {
+            pauseCustomAudio();
+        } else {
+            playCustomAudio();
+        }
+    });
+}
+
+// 播放自定义音频
+function playCustomAudio() {
+    if (!customAudioBuffer || !audioContext) return;
+
+    // 确保 AudioContext 运行
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
+    // 创建新的 AudioBufferSourceNode（一次性的）
+    customAudioSource = audioContext.createBufferSource();
+    customAudioSource.buffer = customAudioBuffer;
+
+    // 创建增益节点（音量控制）
+    customAudioGainNode = audioContext.createGain();
+    customAudioGainNode.gain.value = (customAudioVolume ? customAudioVolume.value / 100 : 0.8);
+
+    // 连接到输出
+    customAudioSource.connect(customAudioGainNode);
+
+    // 路由到 audioMixDest（混入频道语音）
+    if (audioMixDest) {
+        customAudioGainNode.connect(audioMixDest);
+        console.log('[CustomAudio] 路由到 audioMixDest → WebRTC');
+    } else {
+        // 没有 audioMixDest 时，直接输出到扬声器（仅本地听到）
+        customAudioGainNode.connect(audioContext.destination);
+        console.log('[CustomAudio] audioMixDest 不可用，仅本地播放');
+    }
+
+    // 从暂停位置开始播放
+    const offset = customAudioPausedAt;
+    customAudioSource.start(0, offset);
+    customAudioStartTime = audioContext.currentTime - offset;
+    customAudioPlaying = true;
+
+    // 播放结束时
+    customAudioSource.onended = () => {
+        if (customAudioPlaying) {
+            // 自然播放完毕
+            customAudioPlaying = false;
+            customAudioPausedAt = 0;
+            updateCustomAudioTime(0);
+            updateCustomAudioPlayButton();
+            stopCustomAudioTimeUpdate();
+            console.log('[CustomAudio] 播放完毕');
+        }
+    };
+
+    // 更新 UI
+    updateCustomAudioPlayButton();
+    startCustomAudioTimeUpdate();
+    console.log('[CustomAudio] 开始播放，偏移:', offset.toFixed(1) + 's');
+}
+
+// 暂停
+function pauseCustomAudio() {
+    if (!customAudioPlaying || !customAudioSource) return;
+
+    // 记录当前位置
+    customAudioPausedAt = audioContext.currentTime - customAudioStartTime;
+    if (customAudioPausedAt >= customAudioDuration) {
+        customAudioPausedAt = 0;
+    }
+
+    // 停止并断开当前 source
+    try { customAudioSource.stop(); } catch (e) { /* 可能已停止 */ }
+    customAudioSource.disconnect();
+    customAudioSource = null;
+
+    if (customAudioGainNode) {
+        customAudioGainNode.disconnect();
+        customAudioGainNode = null;
+    }
+
+    customAudioPlaying = false;
+    updateCustomAudioPlayButton();
+    stopCustomAudioTimeUpdate();
+    updateCustomAudioTime(customAudioPausedAt);
+    console.log('[CustomAudio] 暂停于:', customAudioPausedAt.toFixed(1) + 's');
+}
+
+// 停止
+if (customAudioStopBtn) {
+    customAudioStopBtn.addEventListener('click', stopCustomAudio);
+}
+
+function stopCustomAudio() {
+    if (customAudioSource) {
+        try { customAudioSource.stop(); } catch (e) { }
+        customAudioSource.disconnect();
+        customAudioSource = null;
+    }
+    if (customAudioGainNode) {
+        customAudioGainNode.disconnect();
+        customAudioGainNode = null;
+    }
+    customAudioPlaying = false;
+    customAudioPausedAt = 0;
+    updateCustomAudioPlayButton();
+    stopCustomAudioTimeUpdate();
+    updateCustomAudioTime(0);
+}
+
+// 关闭播放器
+if (customAudioCloseBtn) {
+    customAudioCloseBtn.addEventListener('click', () => {
+        stopCustomAudio();
+        customAudioBuffer = null;
+        customAudioDuration = 0;
+        customAudioPlayer.classList.add('hidden');
+        toggleCustomAudioBtn.classList.remove('active');
+    });
+}
+
+// 音量控制
+if (customAudioVolume) {
+    customAudioVolume.addEventListener('input', () => {
+        if (customAudioGainNode) {
+            customAudioGainNode.gain.value = customAudioVolume.value / 100;
+        }
+    });
+}
+
+// 更新时间显示
+function updateCustomAudioTime(seconds) {
+    if (!customAudioTime) return;
+    const s = Math.max(0, Math.min(seconds, customAudioDuration || 0));
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    customAudioTime.textContent = String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+}
+
+function startCustomAudioTimeUpdate() {
+    stopCustomAudioTimeUpdate();
+    customAudioTimeInterval = setInterval(() => {
+        if (!customAudioPlaying || !audioContext) return;
+        const elapsed = audioContext.currentTime - customAudioStartTime;
+        updateCustomAudioTime(elapsed);
+        if (elapsed >= customAudioDuration) {
+            stopCustomAudioTimeUpdate();
+        }
+    }, 200);
+}
+
+function stopCustomAudioTimeUpdate() {
+    if (customAudioTimeInterval) {
+        clearInterval(customAudioTimeInterval);
+        customAudioTimeInterval = null;
+    }
+}
+
+function updateCustomAudioPlayButton() {
+    if (!customAudioPlayBtn) return;
+    if (customAudioPlaying) {
+        customAudioPlayBtn.classList.add('playing');
+        customAudioPlayBtn.title = '暂停';
+    } else {
+        customAudioPlayBtn.classList.remove('playing');
+        customAudioPlayBtn.title = '播放';
+    }
+}
+
+// 清理自定义音频资源
+function cleanupCustomAudio() {
+    stopCustomAudio();
+    customAudioBuffer = null;
+    customAudioDuration = 0;
+    customAudioPlayer.classList.add('hidden');
+    toggleCustomAudioBtn.classList.remove('active');
 }
 
 function toggleTts() {

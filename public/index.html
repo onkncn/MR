@@ -237,6 +237,13 @@
                     </svg>
                     <span class="denoise-label">AI</span>
                 </button>
+                <button id="toggleCustomAudioBtn" class="control-btn custom-audio-btn" title="播放自定义音频">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 18V5l12-2v13"></path>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <circle cx="18" cy="16" r="3"></circle>
+                    </svg>
+                </button>
                 <button id="toggleTtsBtn" class="control-btn tts-btn active" title="聊天TTS">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M4 9v6h4l5 4V5L8 9H4z"></path>
@@ -292,6 +299,37 @@
             </div>
         </div>
     </div>
+
+    <!-- 自定义音频播放器 -->
+    <div id="customAudioPlayer" class="custom-audio-player hidden">
+        <div class="custom-audio-info">
+            <span class="custom-audio-icon">🎵</span>
+            <span id="customAudioName" class="custom-audio-name">音频文件.mp3</span>
+            <span id="customAudioTime" class="custom-audio-time">00:00</span>
+        </div>
+        <div class="custom-audio-controls">
+            <button id="customAudioPlayBtn" class="custom-audio-play-btn" title="播放/暂停">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+            </button>
+            <button id="customAudioStopBtn" class="custom-audio-stop-btn" title="停止">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="6" y="6" width="12" height="12"></rect>
+                </svg>
+            </button>
+            <div class="custom-audio-volume-wrapper">
+                <input type="range" id="customAudioVolume" class="custom-audio-volume" min="0" max="100" value="80" title="自定义音频音量">
+            </div>
+            <button id="customAudioCloseBtn" class="custom-audio-close-btn" title="关闭">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+    </div>
+    <input type="file" id="customAudioFileInput" accept="audio/*" style="display:none">
 
     <div id="channelContextMenu" class="channel-context-menu">
         <div class="channel-context-item" id="ctxRename">

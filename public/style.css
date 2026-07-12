@@ -2261,6 +2261,182 @@ body {
     display: none;
 }
 
+/* ====== 自定义音频播放器 ====== */
+.custom-audio-btn {
+    position: relative;
+    width: auto !important;
+    padding: 8px 12px !important;
+    gap: 4px;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 48px;
+}
+
+.custom-audio-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.custom-audio-btn.active {
+    background: #f0b232;
+    color: #ffffff;
+}
+
+.custom-audio-player {
+    position: fixed;
+    bottom: 88px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 500;
+    background: #2A364F;
+    border: 1px solid #3a4560;
+    border-radius: 12px;
+    padding: 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 340px;
+    max-width: 420px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.custom-audio-player.hidden {
+    display: none;
+}
+
+.custom-audio-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.custom-audio-icon {
+    font-size: 18px;
+}
+
+.custom-audio-name {
+    flex: 1;
+    font-size: 13px;
+    color: #b9bbbe;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.custom-audio-time {
+    font-size: 12px;
+    color: #72767d;
+    font-variant-numeric: tabular-nums;
+    min-width: 45px;
+    text-align: right;
+}
+
+.custom-audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.custom-audio-play-btn,
+.custom-audio-stop-btn,
+.custom-audio-close-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: #3a4560;
+    color: #dcddde;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.custom-audio-play-btn:hover,
+.custom-audio-stop-btn:hover,
+.custom-audio-close-btn:hover {
+    background: #4a5575;
+}
+
+.custom-audio-play-btn svg,
+.custom-audio-stop-btn svg,
+.custom-audio-close-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.custom-audio-play-btn.playing {
+    background: #3ba55c;
+    color: #ffffff;
+}
+
+.custom-audio-play-btn.playing svg polygon {
+    display: none;
+}
+
+.custom-audio-play-btn.playing::after {
+    content: '';
+    display: block;
+    width: 6px;
+    height: 12px;
+    border-left: 3px solid currentColor;
+    border-right: 3px solid currentColor;
+}
+
+.custom-audio-close-btn:hover {
+    background: #ed4245;
+    color: #ffffff;
+}
+
+.custom-audio-volume-wrapper {
+    flex: 1;
+    padding: 0 4px;
+}
+
+.custom-audio-volume {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #3a4560;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.custom-audio-volume::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #dcddde;
+    cursor: pointer;
+    border: 2px solid #2A364F;
+}
+
+.custom-audio-volume::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #dcddde;
+    cursor: pointer;
+    border: 2px solid #2A364F;
+}
+
+/* 移动端播放器调整 */
+@media (max-width: 768px) {
+    .custom-audio-player {
+        bottom: 100px;
+        left: 12px;
+        right: 12px;
+        transform: none;
+        min-width: unset;
+        max-width: unset;
+    }
+}
+
 /* ====== 桌面端聊天全屏模式 ====== */
 .room.chat-only .sidebar-left,
 .room.chat-only .resize-handle-v {
