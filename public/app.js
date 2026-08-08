@@ -2231,6 +2231,10 @@ async function joinChannel(channel) {
         }
 
         currentChannel = channel;
+        // BUGFIX: M14 缓存频道密码，供断线重连（R2）重新加入时使用
+        // 原逻辑重连 join-channel 不带 password，密码频道会被服务端拒绝，
+        // 导致 user-connected 不广播、双方静默无声，必须换用户名重新输密码才能恢复。
+        currentChannel._password = password || '';
 
         socket.emit('join-channel', { channelId: channel.id, password: password });
         updateAudioButtons();
@@ -3429,7 +3433,9 @@ function createPeerConnection(remoteUserName) {
                 peerConnections.get(remoteUserName).close();
                 peerConnections.delete(remoteUserName);
             }
-            participants.delete(remoteUserName);
+            // BUGFIX: M14 不再删除 participants —— PC failed 不代表对方离线，
+            // 对方可能仍在频道正常说话，只是这条连接死了。
+            // 删除会导致 UI 上对方消失，且无法触发自动重建。
             pendingCandidates.delete(remoteUserName);
             remoteAudioElements.forEach(audio => {
                 if (audio.id.startsWith('remote-audio-' + remoteUserName)) {
@@ -3452,10 +3458,28 @@ function createPeerConnection(remoteUserName) {
                 }
             }
             updateParticipantsDisplay();
+            // BUGFIX: M14 failed 后自动重建 —— 原逻辑只清理不重建，
+            // 导致连接永久死亡，必须换用户名（重新触发 user-connected）才能恢复声音。
+            scheduleRebuild(remoteUserName, 2000 + Math.random() * 1000);
         }
     };
-    
+
     return pc;
+}
+
+// BUGFIX: M14 连接失败后自动重建
+// 原逻辑 failed 后只清理不重建，导致 WebRTC 链路永久死亡，
+// 必须换用户名重新登录（触发 user-connected 广播）才能恢复声音。
+function scheduleRebuild(remoteUserName, delay) {
+    setTimeout(() => {
+        if (!currentChannel) return;                      // 已离开频道
+        if (!participants.has(remoteUserName)) return;    // 对方已离开
+        if (peerConnections.has(remoteUserName)) return;  // 已被其他路径重建
+        console.log(`[M14] 自动重建与 ${remoteUserName} 的连接`);
+        const pc = createPeerConnection(remoteUserName);
+        createOfferAndSend(pc, remoteUserName).catch(e =>
+            console.warn('[M14] 重建 offer 失败:', e.message || e));
+    }, delay);
 }
 
 async function createOfferAndSend(pc, remoteUserName) {
@@ -3717,8 +3741,12 @@ socket.on('user-connected', async (data) => {
     updateParticipantsDisplay();
     updateOnlineUserList();
     
-    const pc = createPeerConnection(remoteUserName);
-    await createOfferAndSend(pc, remoteUserName);
+    // BUGFIX: M14 若 room-users 兜底已建连，不再重复建 PC（避免覆盖正在协商的 PC）
+    let pc = peerConnections.get(remoteUserName);
+    if (!pc) {
+        pc = createPeerConnection(remoteUserName);
+        await createOfferAndSend(pc, remoteUserName);
+    }
 });
 
 socket.on('user-disconnected', (remoteUserName) => {
@@ -3853,6 +3881,15 @@ socket.on('room-users', (users) => {
             p.muted = isMuted || false;
             p.screenSharing = isSharing || false;
             if (ip) p.ip = ip;
+        }
+        // BUGFIX: M14 兜底——room-users 也主动建连，不再完全依赖 user-connected 事件。
+        // user-connected 可能因 socket 抖动丢失，导致加入者永远收不到 offer 而无声；
+        // 只有换用户名重新加入（重新触发广播）才能恢复。
+        if (name !== userName && !peerConnections.has(name)) {
+            console.log('[M14] room-users 兜底建连:', name);
+            const pc = createPeerConnection(name);
+            createOfferAndSend(pc, name).catch(e =>
+                console.warn('[M14] room-users 建连 offer 失败:', e.message || e));
         }
     });
     updateParticipantsDisplay();
@@ -4248,7 +4285,8 @@ socket.on('connect', () => {
         socket.emit('login', userName);
         if (currentChannel) {
             console.log('[R2] 尝试重新加入频道:', currentChannel.name);
-            socket.emit('join-channel', { channelId: currentChannel.id });
+            // BUGFIX: M14 重连带密码（密码频道原逻辑会被服务端拒绝）
+            socket.emit('join-channel', { channelId: currentChannel.id, password: currentChannel._password || '' });
         }
     }
 });
