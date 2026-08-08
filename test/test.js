@@ -333,8 +333,10 @@ async function runTests() {
     bob.emit('join-channel', { channelId: privateChannelId, password: 'pass123' });
     const who = await connected;
     await bobUsers;
-    if (who === 'Bob') ok(`加入通知正常: Alice 收到 "${who}" 加入`);
-    else fail('加入通知', `收到 ${who} 而非 Bob`);
+    // v2.1+ user-connected 发送 { name, ip } 对象，向前兼容字符串
+    const whoName = typeof who === 'string' ? who : (who && who.name);
+    if (whoName === 'Bob') ok(`加入通知正常: Alice 收到 "${whoName}" 加入`);
+    else fail('加入通知', `收到 ${JSON.stringify(who)} 而非 Bob`);
   } catch (e) { fail('加入通知', e.message); }
 
   // ─────────────────────────────────────
