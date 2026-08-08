@@ -1036,10 +1036,25 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=7')) {
-      ok('缓存破坏: index.html app.js?v=7');
+    if (html.includes('app.js?v=8')) {
+      ok('缓存破坏: index.html app.js?v=8');
     } else {
-      fail('缓存破坏', 'app.js?v=7 未找到');
+      fail('缓存破坏', 'app.js?v=8 未找到');
+    }
+    
+    // M16 移动端控制栏自动隐藏：断点与 CSS 横屏 932px 对齐
+    if (appJs.includes('window.innerWidth > 932')) {
+      ok('M16: 控制栏自动隐藏断点与 CSS 横屏 932px 对齐');
+    } else {
+      fail('M16: 自动隐藏断点', '未找到 932px 断点');
+    }
+    
+    // M16 横屏移动端跳过第二套全屏隐藏（避免双重控制冲突）
+    if (appJs.includes('window.innerWidth <= 932 && matchMedia') &&
+        appJs.includes('initControlsAutoHide 单独管理')) {
+      ok('M16: 横屏移动端由单套逻辑管理（无双重隐藏冲突）');
+    } else {
+      fail('M16: 双重隐藏冲突', '未找到横屏移动端跳过逻辑');
     }
     
     // v2.4 聊天记录按频道隔离

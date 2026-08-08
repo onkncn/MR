@@ -687,7 +687,10 @@ sidebarToggle.addEventListener('click', toggleSidebar);
     if (!mainControls) return;
     
     // 桌面端不启用
-    if (window.innerWidth > 768) return;
+    // BUGFIX: M16 断点与 CSS 横屏布局一致（932px）而非 768px —
+    // 原 768px 导致 769-932px 宽的大屏手机横屏（iPhone Pro Max 等）自动隐藏失效，
+    // 而 CSS 却已按 932px 应用横屏布局，功能与样式不一致。
+    if (window.innerWidth > 932) return;
     
     let hideTimer = null;
     const HIDE_DELAY = 3000;
@@ -1215,6 +1218,11 @@ initResizeHandles();
         
         // 竖屏移动端不启用自动隐藏
         if (isPortraitMobile) return false;
+        
+        // BUGFIX: M16 横屏移动端由 initControlsAutoHide 单独管理（class 方式 3s 下沉），
+        // 本逻辑用 inline style 控制同一元素会与之冲突（opacity 互相覆盖、恢复需多次点击）。
+        // 横屏移动端直接跳过，桌面/平板全屏模式仍由本逻辑管理。
+        if (window.innerWidth <= 932 && matchMedia('(orientation: landscape)').matches) return false;
         
         // 桌面端/横屏移动端：侧边栏和聊天面板都需要收起
         const chatStyle = getComputedStyle(chatPanel);
