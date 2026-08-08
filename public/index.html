@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -277,6 +277,15 @@
                     </svg>
                 </button>
             </div>
+            <div class="online-users-section" id="onlineUsersSection">
+                <div class="online-users-header">
+                    <span>在线用户</span>
+                    <span class="online-users-count" id="onlineUsersCount">0</span>
+                </div>
+                <div class="online-users-list" id="onlineUsersList">
+                    <div class="online-users-empty">暂无其他用户</div>
+                </div>
+            </div>
             <div class="chat-messages" id="chatMessages">
                 <div class="chat-empty">开始聊天吧...</div>
             </div>
@@ -420,6 +429,6 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>

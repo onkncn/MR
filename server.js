@@ -173,6 +173,7 @@ const mutedUsers = new Map();  // channelId -> Set<userId>
 const joinTimers = new Map();  // channelId -> Map<userId, joinTimestamp>
 const deleteTimers = new Map(); // channelId -> timeout handle
 const typingUsers = new Map(); // channelId -> Map<userId, timeout>
+const userIps = new Map(); // userId -> ip
 const MAX_MESSAGES = 200; // 每频道最多存储消息数
 const MAX_TEXT_MESSAGE_LENGTH = 5000; // S6: 文本消息最大长度
 const MAX_DATA_MESSAGE_LENGTH = 100000; // S6: data URL 最大长度（图片/视频）
@@ -308,6 +309,23 @@ io.on('connection', (socket) => {
     // P1: 维护用户-连接索引
     if (!userSockets.has(name)) userSockets.set(name, new Set());
     userSockets.get(name).add(socket.id);
+
+    // 追踪用户 IP
+    const clientIp = socket.handshake.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || socket.handshake.address
+      || socket.request.connection?.remoteAddress;
+    userIps.set(name, clientIp);
+
+    // 广播新用户上线（给所有已连接客户端）
+    socket.broadcast.emit('user-online', { name, ip: clientIp });
+
+    // 构建当前所有在线用户列表返回给登录者
+    const onlineUsers = [];
+    for (const [uname, uip] of userIps) {
+      onlineUsers.push({ name: uname, ip: uip });
+    }
+    socket.emit('online-users', onlineUsers);
+
     socket.emit('channel-list', Array.from(channels.entries()).map(([id, ch]) => ({
       id,
       name: ch.name,
@@ -375,6 +393,12 @@ io.on('connection', (socket) => {
     socket._leaving = false; // SO2: 重置离开标志，允许后续正常离开
     channel.users.add(userId);
 
+    // 追踪用户 IP
+    const clientIp = socket.handshake.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || socket.handshake.address
+      || socket.request.connection?.remoteAddress;
+    userIps.set(userId, clientIp);
+
     // 记录加入时间
     if (!joinTimers.has(channelId)) joinTimers.set(channelId, new Map());
     joinTimers.get(channelId).set(userId, Date.now());
@@ -395,10 +419,11 @@ io.on('connection', (socket) => {
       .map(u => ({
         name: u,
         screenSharing: channelScreenStatus.get(u) || false,
-        muted: channelMuted.has(u)
+        muted: channelMuted.has(u),
+        ip: userIps.get(u) || ''
       }));
     socket.emit('room-users', roomUsers);
-    socket.to(channelId).emit('user-connected', userId);
+    socket.to(channelId).emit('user-connected', { name: userId, ip: userIps.get(userId) || '' });
 
     io.emit('channel-updated', {
       id: channelId,
@@ -729,6 +754,10 @@ io.on('connection', (socket) => {
           userSockets.delete(socket.username);
           // S2: 只有所有连接都断开才移除活跃用户名
           activeUsernames.delete(socket.username);
+          // 广播用户离线（给所有剩余客户端）
+          socket.broadcast.emit('user-offline', { name: socket.username });
+          // 清理 IP 记录（仅在完全断开时）
+          userIps.delete(socket.username);
         }
       }
     }

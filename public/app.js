@@ -94,6 +94,7 @@ function showAlert(msg, title) {
 
 let currentScreenSharer = null;
 let participants = new Map();
+let globalOnlineUsers = new Map(); // 全局在线用户 (name → { ip })
 const peerConnections = new Map();
 const pendingCandidates = new Map(); // BUGFIX: H3 ICE候选队列
 const screenStreams = new Map(); // 存储每个用户的屏幕共享流
@@ -197,6 +198,10 @@ const chatSendBtn = document.getElementById('chatSendBtn');
 const chatFileBtn = document.getElementById('chatFileBtn');
 const chatPreviewArea = document.getElementById('chatPreviewArea');
 const chatCollapseBtn = document.getElementById('chatCollapseBtn');
+
+const onlineUsersSection = document.getElementById('onlineUsersSection');
+const onlineUsersList = document.getElementById('onlineUsersList');
+const onlineUsersCount = document.getElementById('onlineUsersCount');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
 const mobileAvatar = document.getElementById('mobileAvatar');
 const mobileUserName = document.getElementById('mobileUserName');
@@ -1529,6 +1534,8 @@ function logout() {
     room.classList.add('hidden');
     lobby.classList.remove('hidden');
     userNameInput.value = '';
+    // BUGFIX: B6 清除 localStorage 缓存的用户名，防止刷新页面后自动登录绕过 lobby
+    saveState('username', '');
     
     const isMobile = window.innerWidth <= 768;
     if (isMobile) {
@@ -1775,6 +1782,7 @@ function updateParticipantsDisplay() {
         channelPlaceholder.classList.remove('hidden');
         participantsContainer.classList.add('hidden');
         room.classList.add('no-channel');
+        updateOnlineUserList();
         return;
     }
     
@@ -1784,6 +1792,72 @@ function updateParticipantsDisplay() {
     
     // 刷新侧边栏参与者列表
     updateChannelList();
+    // 刷新右侧在线用户列表
+    updateOnlineUserList();
+}
+
+// 更新右侧面板的在线用户列表（昵称 + IP，全局所有已登录用户）
+function updateOnlineUserList() {
+    if (!onlineUsersList || !onlineUsersCount) return;
+    
+    const entries = [];
+    globalOnlineUsers.forEach((data, name) => {
+        entries.push({ name, ip: data.ip || '', isSelf: name === userName });
+    });
+    
+    // 按自己排最前
+    entries.sort((a, b) => {
+        if (a.isSelf) return -1;
+        if (b.isSelf) return 1;
+        return a.name.localeCompare(b.name);
+    });
+    
+    onlineUsersCount.textContent = entries.length;
+    
+    if (entries.length === 0) {
+        onlineUsersList.innerHTML = '<div class="online-users-empty">暂无在线用户</div>';
+        return;
+    }
+    
+    const fragment = document.createDocumentFragment();
+    entries.forEach(({ name, ip, isSelf }) => {
+        const item = document.createElement('div');
+        item.className = 'online-user-item' + (isSelf ? ' is-self' : '');
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'online-user-avatar';
+        avatar.textContent = name.charAt(0).toUpperCase();
+        
+        const info = document.createElement('div');
+        info.className = 'online-user-info';
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'online-user-name';
+        nameSpan.textContent = name;
+        
+        if (isSelf) {
+            const tag = document.createElement('span');
+            tag.className = 'online-user-self-tag';
+            tag.textContent = '(你)';
+            nameSpan.appendChild(document.createTextNode(' '));
+            nameSpan.appendChild(tag);
+        }
+        info.appendChild(nameSpan);
+        
+        if (ip) {
+            const ipSpan = document.createElement('span');
+            ipSpan.className = 'online-user-ip';
+            ipSpan.textContent = ip;
+            info.appendChild(ipSpan);
+        }
+        
+        item.appendChild(avatar);
+        item.appendChild(info);
+        fragment.appendChild(item);
+    });
+    
+    onlineUsersList.innerHTML = '';
+    onlineUsersList.appendChild(fragment);
 }
 
 function showScreenShare(userId) {
@@ -3577,6 +3651,28 @@ socket.on('channel-list', (list) => {
     updateChannelList();
 });
 
+// 全局在线用户列表事件
+socket.on('online-users', (users) => {
+    console.log('收到在线用户列表:', users);
+    globalOnlineUsers.clear();
+    users.forEach(u => {
+        globalOnlineUsers.set(u.name, { ip: u.ip || '' });
+    });
+    updateOnlineUserList();
+});
+
+socket.on('user-online', (data) => {
+    console.log('用户上线:', data.name, data.ip);
+    globalOnlineUsers.set(data.name, { ip: data.ip || '' });
+    updateOnlineUserList();
+});
+
+socket.on('user-offline', (data) => {
+    console.log('用户离线:', data.name);
+    globalOnlineUsers.delete(data.name);
+    updateOnlineUserList();
+});
+
 socket.on('channel-created', (channel) => {
     console.log('频道创建:', channel);
     channelList.push(channel);
@@ -3612,10 +3708,14 @@ socket.on('channel-deleted', (channelId) => {
     }
 });
 
-socket.on('user-connected', async (remoteUserName) => {
-    console.log('用户加入:', remoteUserName);
-    participants.set(remoteUserName, { audioEnabled: true, screenSharing: false });
+socket.on('user-connected', async (data) => {
+    // 支持旧格式 (string) 和新格式 { name, ip }
+    const remoteUserName = typeof data === 'string' ? data : data.name;
+    const remoteIp = typeof data === 'object' ? data.ip : '';
+    console.log('用户加入:', remoteUserName, remoteIp ? `(${remoteIp})` : '');
+    participants.set(remoteUserName, { audioEnabled: true, screenSharing: false, ip: remoteIp });
     updateParticipantsDisplay();
+    updateOnlineUserList();
     
     const pc = createPeerConnection(remoteUserName);
     await createOfferAndSend(pc, remoteUserName);
@@ -3659,6 +3759,7 @@ socket.on('user-disconnected', (remoteUserName) => {
     }
     
     updateParticipantsDisplay();
+    updateOnlineUserList();
 });
 
 socket.on('offer', async (data) => {
@@ -3738,21 +3839,24 @@ socket.on('ice-candidate', async (data) => {
 socket.on('room-users', (users) => {
     console.log('频道用户列表:', users);
     users.forEach(u => {
-        // 支持新格式 { name, screenSharing } 和旧格式 (string)
+        // 支持新格式 { name, screenSharing, muted, ip } 和旧格式 (string)
         const name = typeof u === 'string' ? u : u.name;
         const isSharing = typeof u === 'object' ? u.screenSharing : false;
         const isMuted = typeof u === 'object' && u.muted;
+        const ip = typeof u === 'object' ? (u.ip || '') : '';
         
         if (name !== userName && !participants.has(name)) {
-            participants.set(name, { audioEnabled: !isMuted, screenSharing: isSharing || false, muted: isMuted || false });
+            participants.set(name, { audioEnabled: !isMuted, screenSharing: isSharing || false, muted: isMuted || false, ip });
         } else if (name !== userName && participants.has(name)) {
             // BUGFIX: C5 保持已有的 audioEnabled 不变，muted 是服务端静音标识
             const p = participants.get(name);
             p.muted = isMuted || false;
             p.screenSharing = isSharing || false;
+            if (ip) p.ip = ip;
         }
     });
     updateParticipantsDisplay();
+    updateOnlineUserList();
 });
 
 socket.on('audio-status', (data) => {
@@ -4200,6 +4304,9 @@ socket.on('nuked', (data) => {
     updateParticipantsDisplay();
     // 刷新频道列表（服务器已清空）
     updateChannelList();
+    // 清空在线列表
+    globalOnlineUsers.clear();
+    updateOnlineUserList();
 });
 
 // R3: 聊天历史消息（加入频道时服务端发送）

@@ -1905,8 +1905,118 @@ body {
     height: 20px;
 }
 
-.chat-messages {
+/* 在线用户列表 */
+.online-users-section {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid #202225;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.online-users-header {
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    color: #b9bbbe;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+.online-users-count {
+    background: #4f545c;
+    color: #dcddde;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.online-users-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+    min-height: 0;
+}
+
+.online-users-empty {
+    color: #8e9297;
+    text-align: center;
+    padding: 12px 8px;
+    font-size: 12px;
+}
+
+.online-user-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    cursor: default;
+    transition: background 0.15s;
+}
+
+.online-user-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.online-user-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #5865f2;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.online-user-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.online-user-name {
+    font-size: 13px;
+    color: #dcddde;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+}
+
+.online-user-self-tag {
+    font-size: 11px;
+    color: #8e9297;
+    font-weight: 400;
+}
+
+.online-user-item.is-self .online-user-avatar {
+    background: #3ba55c;
+}
+
+.online-user-ip {
+    font-size: 10px;
+    color: #72767d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* 聊天消息区改为 3/4 */
+.chat-messages {
+    flex: 3;
     overflow-y: auto;
     padding: 12px;
     display: flex;
