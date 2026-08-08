@@ -497,9 +497,361 @@ async function runTests() {
   } catch (e) { fail('非管理员静音', e.message); }
 
   // ─────────────────────────────────────
-  // 17. 清理测试数据 & 断开
+  // 17. 踢人权限
   // ─────────────────────────────────────
-  section('🧹 17. 清理 & 断开');
+  section('🚪 17. 踢人权限');
+
+  // 非房主踢人应被拒绝
+  try {
+    charlie.emit('kick-user', { channelId: privateChannelId, targetUser: 'Alice' });
+    const rejected = await noEvent(alice, 'kicked');
+    if (rejected) ok('非房主踢人被拒绝: Charlie 尝试踢 Alice 无 kicked');
+    else fail('非房主踢人', '非房主成功踢出了房主');
+  } catch (e) { fail('非房主踢人', e.message); }
+
+  // 房主踢人：Bob 被 Alice 踢出，频道内广播 user-disconnected
+  try {
+    const kicked = waitFor(bob, 'kicked');
+    const gone = waitFor(charlie, 'user-disconnected');
+    alice.emit('kick-user', { channelId: privateChannelId, targetUser: 'Bob' });
+    const k = await kicked;
+    const g = await gone;
+    if (k.channel === '私密测试频道' && g === 'Bob') {
+      ok('房主踢人: Alice 踢出 Bob → Bob 收 kicked, 频道内广播 user-disconnected');
+    } else {
+      fail('房主踢人', `kicked=${JSON.stringify(k)}, user-disconnected=${g}`);
+    }
+  } catch (e) { fail('房主踢人', e.message); }
+
+  // Bob 重新加入，恢复状态供后续测试
+  try {
+    const users = waitFor(bob, 'room-users');
+    bob.emit('join-channel', { channelId: privateChannelId, password: 'pass123' });
+    await users;
+    await new Promise(r => setTimeout(r, 300));
+    ok('Bob 重新加入私密频道');
+  } catch (e) { fail('Bob 重新加入', e.message); }
+
+  // ─────────────────────────────────────
+  // 18. 频道重命名权限
+  // ─────────────────────────────────────
+  section('✏️ 18. 频道重命名权限');
+
+  // 非房主重命名被拒绝
+  try {
+    charlie.emit('rename-channel', privateChannelId, '非法改名');
+    const rejected = await noEvent(alice, 'channel-updated');
+    if (rejected) ok('非房主重命名被拒绝');
+    else fail('非房主重命名', '非房主成功重命名了频道');
+  } catch (e) { fail('非房主重命名', e.message); }
+
+  // 房主重命名成功，所有用户收到 channel-updated
+  try {
+    const updated = waitFor(charlie, 'channel-updated');
+    alice.emit('rename-channel', privateChannelId, '私密改名频道');
+    const ch = await updated;
+    if (ch.id === privateChannelId && ch.name === '私密改名频道') {
+      ok('房主重命名: 频道改名为 "私密改名频道" 并广播 channel-updated');
+    } else {
+      fail('房主重命名', `id=${ch.id}, name=${ch.name}`);
+    }
+  } catch (e) { fail('房主重命名', e.message); }
+
+  // 改回原名（保持后续测试一致性）
+  try {
+    const updated = waitFor(charlie, 'channel-updated');
+    alice.emit('rename-channel', privateChannelId, '私密测试频道');
+    await updated;
+    ok('频道名恢复为 "私密测试频道"');
+  } catch (e) { fail('频道名恢复', e.message); }
+
+  // ─────────────────────────────────────
+  // 19. 频道删除权限
+  // ─────────────────────────────────────
+  section('🗑️ 19. 频道删除权限');
+
+  // 非房主删除被拒绝
+  try {
+    charlie.emit('delete-channel', privateChannelId);
+    const rejected = await noEvent(alice, 'channel-removed');
+    if (rejected) ok('非房主删除频道被拒绝');
+    else fail('非房主删除频道', '非房主成功删除了频道');
+  } catch (e) { fail('非房主删除频道', e.message); }
+
+  // ─────────────────────────────────────
+  // 20. 消息撤回权限
+  // ─────────────────────────────────────
+  section('↩️ 20. 消息撤回权限');
+
+  let recallMsgId;
+  // Bob 发一条待撤回消息
+  try {
+    const echoed = waitFor(bob, 'chat-message');
+    bob.emit('chat-message', { message: '待撤回消息' });
+    const msg = await echoed;
+    recallMsgId = msg.id;
+    if (recallMsgId) ok(`Bob 发送消息成功 (id: ${recallMsgId})`);
+    else fail('发送消息', '回显消息缺少 id');
+  } catch (e) { fail('发送消息', e.message); }
+
+  // 第三者撤回被拒绝
+  try {
+    charlie.emit('delete-message', recallMsgId);
+    const rejected = await noEvent(alice, 'message-deleted');
+    if (rejected) ok('第三者撤回被拒绝: Charlie 无法撤回 Bob 的消息');
+    else fail('第三者撤回', 'Charlie 成功撤回了 Bob 的消息');
+  } catch (e) { fail('第三者撤回', e.message); }
+
+  // 作者自己撤回成功
+  try {
+    const deleted = waitFor(charlie, 'message-deleted');
+    bob.emit('delete-message', recallMsgId);
+    const msgId = await deleted;
+    if (msgId === recallMsgId) ok('作者撤回成功: Bob 撤回自己的消息 → message-deleted 广播');
+    else fail('作者撤回', `收到 id=${msgId}`);
+  } catch (e) { fail('作者撤回', e.message); }
+
+  // ─────────────────────────────────────
+  // 21. 全局在线列表 (v2.1)
+  // ─────────────────────────────────────
+  section('🌐 21. 全局在线列表');
+
+  try {
+    const dave = await connect('Dave');
+    const online = waitFor(dave, 'online-users');
+    const announced = waitFor(alice, 'user-online');
+    dave.emit('login', 'Dave');
+    const users = await online;
+    const a = await announced;
+    const names = users.map(u => u.name);
+    if (a.name === 'Dave' && names.includes('Alice') && names.includes('Dave')) {
+      ok(`Dave 登录: online-users 含 ${names.length} 人, Alice 收到 user-online`);
+    } else {
+      fail('全局在线列表', `online=${JSON.stringify(names)}, user-online=${JSON.stringify(a)}`);
+    }
+    // Dave 断开 → 其他人收到 user-offline
+    const gone = waitFor(alice, 'user-offline');
+    dave.disconnect();
+    const off = await gone;
+    if (off.name === 'Dave') ok('Dave 断开: Alice 收到 user-offline');
+    else fail('user-offline', `收到 ${JSON.stringify(off)}`);
+  } catch (e) { fail('全局在线列表', e.message); }
+
+  // ─────────────────────────────────────
+  // 22. 表情反应
+  // ─────────────────────────────────────
+  section('😀 22. 表情反应');
+
+  let reactionMsgId;
+  try {
+    const echoed = waitFor(bob, 'chat-message');
+    bob.emit('chat-message', { message: '这条要有表情' });
+    const msg = await echoed;
+    reactionMsgId = msg.id;
+    ok('Bob 发送待反应消息');
+  } catch (e) { fail('发送待反应消息', e.message); }
+
+  // 添加反应
+  try {
+    const reacted = waitFor(alice, 'reaction-updated');
+    bob.emit('add-reaction', { msgId: reactionMsgId, emoji: '👍' });
+    const data = await reacted;
+    const users = (data.reactions['👍'] || []);
+    if (data.msgId === reactionMsgId && users.includes('Bob')) {
+      ok('添加反应: 👍 → [Bob]');
+    } else {
+      fail('添加反应', `reactions=${JSON.stringify(data.reactions)}`);
+    }
+  } catch (e) { fail('添加反应', e.message); }
+
+  // 再次点击取消反应（toggle）
+  try {
+    const reacted = waitFor(alice, 'reaction-updated');
+    bob.emit('add-reaction', { msgId: reactionMsgId, emoji: '👍' });
+    const data = await reacted;
+    if (!data.reactions['👍']) {
+      ok('取消反应: 再次点击 👍 已移除');
+    } else {
+      fail('取消反应', `reactions=${JSON.stringify(data.reactions)}`);
+    }
+  } catch (e) { fail('取消反应', e.message); }
+
+  // ─────────────────────────────────────
+  // 23. 输入状态
+  // ─────────────────────────────────────
+  section('⌨️ 23. 输入状态');
+
+  // 输入中广播
+  try {
+    const typing = waitFor(alice, 'typing-users');
+    bob.emit('typing-status', { typing: true });
+    const list = await typing;
+    if (Array.isArray(list) && list.includes('Bob')) {
+      ok('输入状态: Bob 输入中 → typing-users [Bob]');
+    } else {
+      fail('输入状态', `typing-users=${JSON.stringify(list)}`);
+    }
+  } catch (e) { fail('输入状态', e.message); }
+
+  // 停止输入
+  try {
+    const typing = waitFor(alice, 'typing-users');
+    bob.emit('typing-status', { typing: false });
+    const list = await typing;
+    if (Array.isArray(list) && !list.includes('Bob')) {
+      ok('停止输入: typing-users 移除 Bob');
+    } else {
+      fail('停止输入', `typing-users=${JSON.stringify(list)}`);
+    }
+  } catch (e) { fail('停止输入', e.message); }
+
+  // 3 秒自动清除（不手动停止）
+  try {
+    bob.emit('typing-status', { typing: true });
+    await new Promise(r => setTimeout(r, 100));
+    const typing = waitFor(alice, 'typing-users', 5000);
+    const list = await typing;
+    if (Array.isArray(list) && !list.includes('Bob')) {
+      ok('3秒自动清除: 未手动停止, typing-users 自动移除 Bob');
+    } else {
+      fail('3秒自动清除', `typing-users=${JSON.stringify(list)}`);
+    }
+  } catch (e) { fail('3秒自动清除', e.message); }
+
+  // ─────────────────────────────────────
+  // 24. 邀请链接
+  // ─────────────────────────────────────
+  section('🔗 24. 邀请链接');
+
+  let inviteToken;
+  // 房主生成邀请（限 1 次使用）
+  try {
+    const created = waitFor(alice, 'invite-created');
+    alice.emit('create-invite', { channelId: privateChannelId, maxUses: 1 });
+    const inv = await created;
+    inviteToken = inv.token;
+    if (inviteToken && inv.channelId === privateChannelId) ok(`邀请链接生成成功 (token: ${inviteToken.slice(0, 8)}...)`);
+    else fail('邀请链接生成', JSON.stringify(inv));
+  } catch (e) { fail('邀请链接生成', e.message); }
+
+  // 用邀请加入成功 + 超限被拒
+  try {
+    const dave = await connect('Dave');
+    const valid = waitFor(dave, 'invite-valid');
+    dave.emit('join-by-invite', inviteToken);
+    const info = await valid;
+    if (info.channelId === privateChannelId && info.channelName === '私密测试频道') {
+      ok('邀请加入: Dave 收到 invite-valid');
+    } else {
+      fail('邀请加入', JSON.stringify(info));
+    }
+    const over = waitFor(dave, 'join-error');
+    dave.emit('join-by-invite', inviteToken);
+    const err = await over;
+    if (String(err).includes('上限')) ok('邀请超限被拒: 第二次使用 → join-error');
+    else fail('邀请超限', String(err));
+    dave.disconnect();
+  } catch (e) { fail('邀请链接', e.message); }
+
+  // 无效 token
+  try {
+    const dave = await connect('Dave');
+    const err = waitFor(dave, 'join-error');
+    dave.emit('join-by-invite', 'invalidtoken123');
+    const e = await err;
+    if (String(e).includes('无效') || String(e).includes('过期')) ok('无效 token 被拒: join-error');
+    else fail('无效 token', String(e));
+    dave.disconnect();
+  } catch (e) { fail('无效 token', e.message); }
+
+  // ─────────────────────────────────────
+  // 25. 加入不存在的频道
+  // ─────────────────────────────────────
+  section('🚫 25. join-error');
+
+  try {
+    const err = waitFor(bob, 'join-error');
+    bob.emit('join-channel', { channelId: 'NONEXIST123' });
+    const e = await err;
+    if (String(e).includes('不存在')) ok('加入不存在频道: join-error "频道不存在"');
+    else fail('join-error', String(e));
+  } catch (e) { fail('join-error', e.message); }
+
+  // ─────────────────────────────────────
+  // 26. 速率限制
+  // ─────────────────────────────────────
+  section('⏱️ 26. 速率限制');
+
+  try {
+    const rateUser = await connect('RateUser');
+    rateUser.emit('login', 'RateUser');
+    await new Promise(r => setTimeout(r, 300));
+    // 连续 11 次 join-channel：前 10 次应收到 join-error（频道不存在），第 11 次被限流无响应
+    let gotErrors = 0;
+    for (let i = 1; i <= 10; i++) {
+      const err = waitFor(rateUser, 'join-error', 2000);
+      rateUser.emit('join-channel', { channelId: 'RATELIMIT' + i });
+      try { await err; gotErrors++; } catch (e) { break; }
+    }
+    const silent = noEvent(rateUser, 'join-error', 1200);
+    rateUser.emit('join-channel', { channelId: 'RATELIMIT11' });
+    const rejected = await silent;
+    if (gotErrors === 10 && rejected) {
+      ok(`速率限制: 前 10 次响应, 第 11 次被限流 (gotErrors=${gotErrors})`);
+    } else {
+      fail('速率限制', `gotErrors=${gotErrors}, 第11次静默=${rejected}`);
+    }
+    rateUser.disconnect();
+  } catch (e) { fail('速率限制', e.message); }
+
+  // ─────────────────────────────────────
+  // 27. 聊天历史
+  // ─────────────────────────────────────
+  section('📜 27. 聊天历史');
+
+  let histChannelId;
+  try {
+    // Bob 创建并加入历史频道
+    const created = waitFor(bob, 'channel-created');
+    bob.emit('create-channel', { name: '历史频道', password: null });
+    const ch = await created;
+    histChannelId = ch.id;
+    createdChannelIds.push(ch.id);
+    const users = waitFor(bob, 'room-users');
+    bob.emit('join-channel', { channelId: histChannelId });
+    await users;
+    // Bob 发 2 条消息
+    const m1 = waitFor(bob, 'chat-message');
+    bob.emit('chat-message', { message: '历史消息1' });
+    await m1;
+    const m2 = waitFor(bob, 'chat-message');
+    bob.emit('chat-message', { message: '历史消息2' });
+    await m2;
+    ok('历史频道: Bob 创建并发送 2 条消息');
+  } catch (e) { fail('历史频道准备', e.message); }
+
+  // 后加入者收到历史消息
+  try {
+    const hist = waitFor(charlie, 'chat-history');
+    charlie.emit('join-channel', { channelId: histChannelId });
+    const history = await hist;
+    const texts = history.map(m => m.message);
+    if (Array.isArray(history) && texts.includes('历史消息1') && texts.includes('历史消息2')) {
+      ok(`后加入者收到聊天历史 (${history.length} 条, 含 Bob 的 2 条)`);
+    } else {
+      fail('聊天历史', JSON.stringify(texts));
+    }
+    // 清理：Bob（房主）删除历史频道
+    const removed = waitFor(charlie, 'channel-removed');
+    bob.emit('delete-channel', histChannelId);
+    await removed;
+    ok('历史频道已清理');
+  } catch (e) { fail('聊天历史', e.message); }
+
+  // ─────────────────────────────────────
+  // 28. 清理测试数据 & 断开
+  // ─────────────────────────────────────
+  section('🧹 28. 清理 & 断开');
 
   // 通过 socket 删除测试创建的频道
   try {
@@ -524,9 +876,9 @@ async function runTests() {
   ok('所有连接已断开');
 
   // ─────────────────────────────────────
-  // 18. 前端静态文件检查
+  // 29. 前端静态文件检查
   // ─────────────────────────────────────
-  section('📄 18. 前端静态文件检查');
+  section('📄 29. 前端静态文件检查');
 
   const fs = require('fs');
   const path = require('path');
@@ -598,6 +950,54 @@ async function runTests() {
       ok('上滑隐藏/下滑恢复逻辑存在');
     } else {
       fail('上滑隐藏/下滑恢复逻辑', '未找到 add/remove header-hidden');
+    }
+    
+    // M14: 无声必须换用户名才能恢复的问题修复守护
+    if (appJs.includes('function scheduleRebuild')) {
+      ok('M14: scheduleRebuild 自动重建函数存在');
+    } else {
+      fail('M14: scheduleRebuild', '未找到函数');
+    }
+    
+    if (appJs.includes('scheduleRebuild(remoteUserName')) {
+      ok('M14: failed 分支调用 scheduleRebuild 自动重建');
+    } else {
+      fail('M14: failed 自动重建', 'failed 分支未调用 scheduleRebuild');
+    }
+    
+    if (appJs.includes('M14 不再删除 participants')) {
+      ok('M14: failed 不再删除 participants（对方可能仍在线）');
+    } else {
+      fail('M14: participants 保留', '未找到标记');
+    }
+    
+    if (appJs.includes('room-users 兜底建连')) {
+      ok('M14: room-users 兜底建连（不依赖 user-connected 事件）');
+    } else {
+      fail('M14: room-users 兜底', '未找到标记');
+    }
+    
+    if (appJs.includes('currentChannel._password') && appJs.includes('password: currentChannel._password')) {
+      ok('M14: R2 断线重连带密码（缓存 _password 并在重连 emit 时使用）');
+    } else {
+      fail('M14: R2 带密码', '未找到 _password 缓存/使用');
+    }
+    
+    // v2.1 全局在线列表事件
+    if (appJs.includes("socket.on('online-users'") &&
+        appJs.includes("socket.on('user-online'") &&
+        appJs.includes("socket.on('user-offline'")) {
+      ok('v2.1: 全局在线列表事件监听存在 (online-users/user-online/user-offline)');
+    } else {
+      fail('v2.1: 在线列表事件', '未找到监听');
+    }
+    
+    // index.html 缓存破坏版本号
+    const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
+    if (html.includes('app.js?v=5')) {
+      ok('缓存破坏: index.html app.js?v=5');
+    } else {
+      fail('缓存破坏', 'app.js?v=5 未找到');
     }
     
   } catch (e) { fail('读取 app.js', e.message); }

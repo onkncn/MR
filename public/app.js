@@ -3484,8 +3484,21 @@ function scheduleRebuild(remoteUserName, delay) {
 
 async function createOfferAndSend(pc, remoteUserName) {
     try {
+        // BUGFIX: M15 防交叉协商（glare 竞态）— 双方同时主动建连时，
+        // createOffer() 异步完成期间可能已收到并处理了对方 offer。
+        // 此时若继续 setLocalDescription 本地 offer，会产生两套交叉不匹配的 SDP，
+        // 导致 setRemoteDescription(answer) 报 wrong state，连接永远建立不起来。
+        // 守卫：已有 remote description（对方 offer 已接管）或非 stable → 放弃主动发 offer。
+        if (pc.remoteDescription || pc.signalingState !== 'stable') {
+            console.log('[createOfferAndSend] 跳过：remote 已存在或非 stable, state:', pc.signalingState);
+            return;
+        }
         // BUGFIX: W4 移除废弃的 offerToReceive 选项，由 addTransceiver 管理
         const offer = await pc.createOffer();
+        if (pc.remoteDescription || pc.signalingState !== 'stable') {
+            console.log('[createOfferAndSend] createOffer 期间状态变化，放弃发送过期 offer');
+            return;
+        }
         await pc.setLocalDescription(offer);
         
         socket.emit('offer', {
@@ -3885,11 +3898,18 @@ socket.on('room-users', (users) => {
         // BUGFIX: M14 兜底——room-users 也主动建连，不再完全依赖 user-connected 事件。
         // user-connected 可能因 socket 抖动丢失，导致加入者永远收不到 offer 而无声；
         // 只有换用户名重新加入（重新触发广播）才能恢复。
+        // BUGFIX: M15 延迟 800ms 再兜底，给 user-connected 触发的 offer 优先到达的机会，
+        // 避免双方同时主动建连导致交叉协商（glare 竞态）。
         if (name !== userName && !peerConnections.has(name)) {
-            console.log('[M14] room-users 兜底建连:', name);
-            const pc = createPeerConnection(name);
-            createOfferAndSend(pc, name).catch(e =>
-                console.warn('[M14] room-users 建连 offer 失败:', e.message || e));
+            const fallbackName = name;
+            setTimeout(() => {
+                if (!currentChannel) return;
+                if (peerConnections.has(fallbackName)) return; // user-connected 已建连
+                console.log('[M14] room-users 兜底建连:', fallbackName);
+                const pc = createPeerConnection(fallbackName);
+                createOfferAndSend(pc, fallbackName).catch(e =>
+                    console.warn('[M14] room-users 建连 offer 失败:', e.message || e));
+            }, 800);
         }
     });
     updateParticipantsDisplay();
