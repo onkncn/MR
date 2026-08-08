@@ -1519,10 +1519,7 @@ function logout() {
     userName = null;
     
     // 清理聊天状态
-    chatMessagesList = [];
-    pendingImages = [];
-    if (chatMessages) chatMessages.innerHTML = '';
-    clearImagePreview();
+    clearChatMessages();
     
     // 重置按钮
     toggleScreenShareBtn.classList.remove('screen-active');
@@ -2316,6 +2313,24 @@ function cleanupAllMedia() {
     selfScreenPreviewEnabled = false;
     viewingScreenOf = null;
     currentScreenSharer = null;
+    // v2.4 聊天记录按频道隔离：离开/被踢/清空时清空聊天面板，
+    // 防止切换频道后上一个频道的消息混入当前频道
+    clearChatMessages();
+}
+
+// v2.4 清空聊天记录（切换频道/离开频道时调用，保证聊天记录按频道隔离）
+function clearChatMessages() {
+    chatMessagesList = [];
+    pendingImages = [];
+    clearImagePreview();
+    if (chatMessages) {
+        chatMessages.innerHTML = '';
+        // 恢复空态占位符
+        const empty = document.createElement('div');
+        empty.className = 'chat-empty';
+        empty.textContent = '开始聊天吧...';
+        chatMessages.appendChild(empty);
+    }
 }
 
 async function leaveChannel() {

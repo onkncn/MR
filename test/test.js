@@ -811,6 +811,13 @@ async function runTests() {
 
   let histChannelId;
   try {
+    // v2.4 跨频道隔离准备：Alice 在私密频道发一条消息，
+    // 后续验证它不会出现在历史频道的聊天记录里
+    const aliceMsg = waitFor(alice, 'chat-message');
+    alice.emit('chat-message', { message: '私密频道专属消息' });
+    await aliceMsg;
+    ok('隔离准备: Alice 在私密频道发送 "私密频道专属消息"');
+
     // Bob 创建并加入历史频道
     const created = waitFor(bob, 'channel-created');
     bob.emit('create-channel', { name: '历史频道', password: null });
@@ -819,7 +826,14 @@ async function runTests() {
     createdChannelIds.push(ch.id);
     const users = waitFor(bob, 'room-users');
     bob.emit('join-channel', { channelId: histChannelId });
-    await users;
+    const bobRoomUsers = await users;
+    // v2.4 频道隔离 — Bob 加入历史频道时 room-users 应为空：
+    // Alice 在私密频道，不属于历史频道，不应出现在 Bob 的频道成员列表
+    if (Array.isArray(bobRoomUsers) && bobRoomUsers.length === 0) {
+      ok('频道隔离: Bob 加入历史频道, room-users 为空（Alice 在私密频道不在本频道）');
+    } else {
+      fail('频道隔离 room-users', `应为空, 实际=${JSON.stringify(bobRoomUsers)}`);
+    }
     // Bob 发 2 条消息
     const m1 = waitFor(bob, 'chat-message');
     bob.emit('chat-message', { message: '历史消息1' });
@@ -830,16 +844,44 @@ async function runTests() {
     ok('历史频道: Bob 创建并发送 2 条消息');
   } catch (e) { fail('历史频道准备', e.message); }
 
-  // 后加入者收到历史消息
+  // 后加入者收到历史消息 + 频道隔离验证
   try {
     const hist = waitFor(charlie, 'chat-history');
+    const roomUsersP = waitFor(charlie, 'room-users');
     charlie.emit('join-channel', { channelId: histChannelId });
     const history = await hist;
+    const roomUsers = await roomUsersP;
     const texts = history.map(m => m.message);
     if (Array.isArray(history) && texts.includes('历史消息1') && texts.includes('历史消息2')) {
       ok(`后加入者收到聊天历史 (${history.length} 条, 含 Bob 的 2 条)`);
     } else {
       fail('聊天历史', JSON.stringify(texts));
+    }
+    // v2.4 聊天记录跨频道隔离 — Charlie 的 chat-history 是本频道（历史频道）的消息，
+    // 不应包含 Alice 在私密频道发的 "私密频道专属消息"
+    if (Array.isArray(history) && !texts.includes('私密频道专属消息')) {
+      ok('聊天记录隔离: 历史频道的 chat-history 不含私密频道的消息');
+    } else {
+      fail('聊天记录隔离', `chat-history 混入了其他频道消息: ${JSON.stringify(texts)}`);
+    }
+    // v2.4 频道隔离 — Charlie 的 room-users 只含本频道成员 Bob，不含私密频道的 Alice
+    const memberNames = roomUsers.map(u => (typeof u === 'string' ? u : u.name));
+    if (memberNames.length === 1 && memberNames[0] === 'Bob') {
+      ok('频道隔离: Charlie 加入历史频道, room-users 只含 Bob（不含私密频道的 Alice）');
+    } else {
+      fail('频道隔离 room-users', `实际=${JSON.stringify(memberNames)}`);
+    }
+    // v2.4 频道隔离 — Bob 离开历史频道：只有历史频道成员收到 user-disconnected，
+    // 私密频道的 Alice 不应收到（事件按频道隔离广播）
+    const gone = waitFor(charlie, 'user-disconnected');
+    const aliceGone = noEvent(alice, 'user-disconnected', 1200);
+    bob.emit('leave-channel');
+    const g = await gone;
+    const isolated = await aliceGone;
+    if (g === 'Bob' && isolated) {
+      ok('频道隔离: Bob 离开历史频道 → Charlie 收 user-disconnected, 私密频道的 Alice 不收到');
+    } else {
+      fail('频道隔离 user-disconnected', `charlie=${g}, alice静默=${isolated}`);
     }
     // 清理：Bob（房主）删除历史频道
     const removed = waitFor(charlie, 'channel-removed');
@@ -994,10 +1036,19 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=6')) {
-      ok('缓存破坏: index.html app.js?v=6');
+    if (html.includes('app.js?v=7')) {
+      ok('缓存破坏: index.html app.js?v=7');
     } else {
-      fail('缓存破坏', 'app.js?v=6 未找到');
+      fail('缓存破坏', 'app.js?v=7 未找到');
+    }
+    
+    // v2.4 聊天记录按频道隔离
+    if (appJs.includes('function clearChatMessages') &&
+        appJs.includes('clearChatMessages()') &&
+        appJs.includes("chatMessages.innerHTML = ''")) {
+      ok('v2.4: 聊天记录按频道隔离 (clearChatMessages 存在并被调用)');
+    } else {
+      fail('v2.4: 聊天记录隔离', '未找到 clearChatMessages 清理逻辑');
     }
     
     // 在线用户列表模式切换：未进频道显示全局，进频道显示频道成员
@@ -1006,6 +1057,21 @@ async function runTests() {
       ok('在线列表: 未进频道显示全局 / 进频道显示频道成员');
     } else {
       fail('在线列表模式切换', '未找到频道成员切换逻辑');
+    }
+    
+    // v2.4 频道成员数据源：频道内用 participants 渲染 + 自动补自己
+    if (appJs.includes('participants.forEach((data, name)') &&
+        appJs.includes("!participants.has(userName)")) {
+      ok('在线列表: 频道内用 participants 数据源 + 自动补自己');
+    } else {
+      fail('在线列表数据源', '未找到频道内 participants 渲染');
+    }
+    
+    // v2.4 标题元素存在
+    if (html.includes('id="onlineUsersTitle"')) {
+      ok('在线列表: 标题元素 onlineUsersTitle 存在');
+    } else {
+      fail('在线列表标题', '未找到 onlineUsersTitle');
     }
     
   } catch (e) { fail('读取 app.js', e.message); }
