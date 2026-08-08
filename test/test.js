@@ -994,10 +994,18 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=5')) {
-      ok('缓存破坏: index.html app.js?v=5');
+    if (html.includes('app.js?v=6')) {
+      ok('缓存破坏: index.html app.js?v=6');
     } else {
-      fail('缓存破坏', 'app.js?v=5 未找到');
+      fail('缓存破坏', 'app.js?v=6 未找到');
+    }
+    
+    // 在线用户列表模式切换：未进频道显示全局，进频道显示频道成员
+    if (appJs.includes("titleEl.textContent = currentChannel ? '频道成员' : '在线用户'") &&
+        appJs.includes('participants.has(userName)')) {
+      ok('在线列表: 未进频道显示全局 / 进频道显示频道成员');
+    } else {
+      fail('在线列表模式切换', '未找到频道成员切换逻辑');
     }
     
   } catch (e) { fail('读取 app.js', e.message); }

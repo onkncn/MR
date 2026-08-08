@@ -1796,14 +1796,31 @@ function updateParticipantsDisplay() {
     updateOnlineUserList();
 }
 
-// 更新右侧面板的在线用户列表（昵称 + IP，全局所有已登录用户）
+// 更新右侧面板的在线用户列表（昵称 + IP）
+// - 未进频道: 显示全部在线用户（全局）
+// - 进频道后: 只显示当前频道成员（participants 不含自己，补上自己）
 function updateOnlineUserList() {
     if (!onlineUsersList || !onlineUsersCount) return;
     
+    // 标题随模式切换
+    const titleEl = document.getElementById('onlineUsersTitle');
+    if (titleEl) titleEl.textContent = currentChannel ? '频道成员' : '在线用户';
+    
     const entries = [];
-    globalOnlineUsers.forEach((data, name) => {
-        entries.push({ name, ip: data.ip || '', isSelf: name === userName });
-    });
+    if (currentChannel) {
+        // 频道内：只显示当前频道成员
+        participants.forEach((data, name) => {
+            entries.push({ name, ip: data.ip || '', isSelf: name === userName });
+        });
+        if (!participants.has(userName)) {
+            entries.push({ name: userName, ip: '', isSelf: true });
+        }
+    } else {
+        // 未进频道：显示全部在线用户
+        globalOnlineUsers.forEach((data, name) => {
+            entries.push({ name, ip: data.ip || '', isSelf: name === userName });
+        });
+    }
     
     // 按自己排最前
     entries.sort((a, b) => {
