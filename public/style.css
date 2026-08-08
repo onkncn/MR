@@ -3027,12 +3027,27 @@ body {
     }
     
     /* 控制栏：横屏时紧凑，底部居中 */
+    /* BUGFIX: M17 覆盖竖屏的 position:fixed/bottom:400px —
+       小屏手机横屏（≤768px 宽）会同时命中竖屏+横屏媒体查询，
+       若不覆盖会导致按钮栏悬浮在聊天面板上方，布局错乱 */
     .main-controls {
+        position: static;
+        z-index: auto;
         padding: 8px 16px;
         gap: 12px;
         justify-content: center;
         background: transparent;
         border-top: none;
+    }
+    
+    /* BUGFIX: M17 按钮栏隐藏时释放布局空间（height 归零），
+       让 flex:1 的屏幕共享区域自动扩展，视频侵占按钮栏位置 */
+    .main-controls.auto-hidden {
+        height: 0;
+        padding: 0;
+        border-top: none;
+        overflow: hidden;
+        transform: translateY(100%);
     }
     
     .control-btn {

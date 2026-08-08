@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=8')) {
-      ok('缓存破坏: index.html app.js?v=8');
+    if (html.includes('app.js?v=9') && html.includes('style.css?v=4')) {
+      ok('缓存破坏: index.html app.js?v=9 + style.css?v=4');
     } else {
-      fail('缓存破坏', 'app.js?v=8 未找到');
+      fail('缓存破坏', 'app.js?v=9 / style.css?v=4 未找到');
     }
     
     // M16 移动端控制栏自动隐藏：断点与 CSS 横屏 932px 对齐
@@ -1100,6 +1100,15 @@ async function runTests() {
       ok('频道名隐藏样式 .header-hidden 存在');
     } else {
       fail('频道名隐藏样式', '未找到 .header-hidden');
+    }
+    
+    // M17 横屏控制栏布局：覆盖竖屏 fixed 定位 + 隐藏时释放空间
+    if (styleCss.includes('BUGFIX: M17 覆盖竖屏的 position:fixed') &&
+        styleCss.includes('.main-controls.auto-hidden') &&
+        styleCss.includes('height: 0')) {
+      ok('M17: 横屏控制栏 position 覆盖 + 隐藏释放布局空间');
+    } else {
+      fail('M17: 横屏控制栏布局', '未找到 position:static / height:0 修复');
     }
     
     // 频道 header 过渡动画
