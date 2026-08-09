@@ -2816,6 +2816,16 @@ body {
         scrollbar-width: none;
     }
     
+    /* BUGFIX: M19 竖屏按钮栏居中（兼容方案） —
+       ::before/::after 的 margin:auto 在内容不超宽时把按钮组挤到居中，
+       内容超宽（小屏+按钮多）时 margin 自动归零，从起点可横滑，不裁切 */
+    .main-controls::before,
+    .main-controls::after {
+        content: '';
+        margin: auto;
+        flex-shrink: 0;
+    }
+    
     .main-controls::-webkit-scrollbar {
         display: none;
     }
