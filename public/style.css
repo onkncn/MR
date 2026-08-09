@@ -3428,15 +3428,19 @@ body {
         display: none;
     }
     
-    /* BUGFIX: M17 控制栏隐藏时保持胶囊位置，仅淡出 */
+    /* BUGFIX: M17/M23 控制栏隐藏时保持胶囊位置可点（v2.15）
+       — 原方案 opacity:0 + 下沉 + pointer-events:none 导致移动端无法唤出按钮
+       （touch 被拦截、click 第一击只唤出不操作），用户反馈"聊天/更多按钮失效"。
+       改为半透明常驻：按钮始终可点，无操作时淡到 20% 降低干扰，点任意按钮恢复。 */
     .main-controls.auto-hidden {
         height: auto;
         padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
         border-top: none;
         overflow: hidden;
-        transform: translateX(-50%) translateY(120%);
-        opacity: 0;
-        pointer-events: none;
+        transform: translateX(-50%);
+        opacity: 0.2;
+        pointer-events: auto;
+        transition: opacity 0.3s ease;
     }
     
     /* BUGFIX: M21 菜单/抽屉打开时强制显示控制栏（v2.10） */

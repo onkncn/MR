@@ -990,8 +990,8 @@ sidebarToggle.addEventListener('click', toggleSidebar);
             hideTimer = setTimeout(hideControls, HIDE_DELAY);
             return;
         }
-        // BUGFIX: M21 音量滑块打开时不隐藏（active 加在 button 上，原检查 wrapper 失效）
-        const activeVolume = mainControls.querySelector('.control-btn-wrapper .volume-control.active');
+        // BUGFIX: M21 音量滑块打开时不隐藏（active 加在 .control-btn-wrapper 上，v2.15 修正选择器）
+        const activeVolume = mainControls.querySelector('.control-btn-wrapper.active');
         if (activeVolume) {
             hideTimer = setTimeout(hideControls, HIDE_DELAY);
             return;
