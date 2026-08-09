@@ -349,7 +349,10 @@ function isMobileDevice() {
 
 function initSidebar() {
     const isMobile = window.innerWidth <= 768;
-    if (isMobile) {
+    // BUGFIX: M20 横屏抽屉模式（v2.9）— 抽屉模式默认收起
+    const isDrawerMode = window.innerWidth <= 932
+        && window.matchMedia('(orientation: landscape)').matches;
+    if (isMobile || isDrawerMode) {
         sidebarOpen = false;
         sidebar.classList.add('closed');
         sidebar.classList.remove('open');
@@ -365,8 +368,11 @@ window.addEventListener('resize', () => {
     if (!room.classList.contains('hidden')) {
         const isMobile = window.innerWidth <= 768;
         const isLandscape = window.matchMedia('(orientation: landscape)').matches && isMobile;
+        // BUGFIX: M20 横屏抽屉模式（v2.9）— 932px 内横屏手机用抽屉布局
+        const isDrawerMode = window.innerWidth <= 932
+            && window.matchMedia('(orientation: landscape)').matches;
         
-        if (!isMobile) {
+        if (!isMobile && !isDrawerMode) {
             // 桌面端：始终显示侧边栏和聊天面板
             sidebarOpen = true;
             sidebar.classList.remove('closed');
@@ -375,6 +381,14 @@ window.addEventListener('resize', () => {
             chatPanelOpen = true;
             const chatPanel = document.getElementById('chatPanel');
             if (chatPanel) chatPanel.classList.remove('hidden');
+        } else if (isDrawerMode) {
+            // 横屏抽屉模式：默认收起抽屉（主内容全屏）
+            sidebarOpen = false;
+            sidebar.classList.add('closed');
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('active');
+            const chatPanel = document.getElementById('chatPanel');
+            if (chatPanel) chatPanel.classList.remove('mobile-expanded');
         } else if (!isLandscape && sidebarOpen) {
             // 竖屏移动端：关闭侧边栏（横屏切竖屏时）
             sidebarOpen = false;
@@ -464,12 +478,24 @@ window.addEventListener('orientationchange', () => {
                 channelHeader.classList.remove('header-hidden');
                 console.log('[HeaderSwipe] 下滑显示频道 header');
             }
+            syncHeaderHiddenState();
         }
 
         startY = 0;
         startTarget = null;
     }, { passive: true });
 })();
+
+// BUGFIX: M20 横屏抽屉模式 — header 隐藏/显示时同步主内容 padding
+function syncHeaderHiddenState() {
+    const currentChannelEl = document.querySelector('.current-channel');
+    if (!currentChannelEl) return;
+    if (channelHeader.classList.contains('header-hidden')) {
+        currentChannelEl.classList.add('header-hidden-active');
+    } else {
+        currentChannelEl.classList.remove('header-hidden-active');
+    }
+}
 
 loginBtn.addEventListener('click', login);
 logoutBtn.addEventListener('click', logout);
@@ -531,8 +557,10 @@ function isPortraitMobile() {
 }
 
 function isMobileChatSheetActive() {
-    // 仅竖屏移动端启用 bottom sheet（横屏用侧栏布局）
-    return isPortraitMobile() && !room.classList.contains('chat-only');
+    // BUGFIX: M20 竖屏用 bottom sheet，横屏（抽屉模式）用右抽屉，均支持 mobile-expanded
+    const isLandscapeMobile = window.innerWidth <= 932
+        && window.matchMedia('(orientation: landscape)').matches;
+    return (isPortraitMobile() || isLandscapeMobile) && !room.classList.contains('chat-only');
 }
 
 function expandMobileChat() {
@@ -614,6 +642,26 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
     if (e.target.closest('button')) return;
     if (!chatPanel.classList.contains('mobile-expanded') && isMobileChatSheetActive()) {
         expandMobileChat();
+    }
+});
+
+// BUGFIX: M20 横屏抽屉模式 — 点击主内容区关闭已展开的抽屉
+document.querySelector('.main-content')?.addEventListener('click', (e) => {
+    const isDrawerMode = window.innerWidth <= 932
+        && window.matchMedia('(orientation: landscape)').matches;
+    if (!isDrawerMode) return;
+    if (e.target.closest('.sidebar-left') || e.target.closest('.chat-panel')) return;
+    if (e.target.closest('button')) return;
+    // 关闭侧边栏抽屉
+    if (sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        sidebar.classList.add('closed');
+        sidebarOpen = false;
+        updateLandscapePanels();
+    }
+    // 关闭聊天抽屉
+    if (chatPanel.classList.contains('mobile-expanded')) {
+        collapseMobileChat();
     }
 });
 
@@ -962,6 +1010,7 @@ if (screenShareVideoEl) {
             } else {
                 channelHeader.classList.remove('header-hidden');
             }
+            syncHeaderHiddenState();
         }
         
         if (remoteScreenVideo.paused) {
@@ -1167,12 +1216,41 @@ function initResizeHandles() {
     let edgeSwipeActive = false;
     let edgeSwipeSide = null; // 'left' or 'right'
     
+    // BUGFIX: M20 横屏抽屉模式检测（v2.9）—
+    // 抽屉模式下边缘滑动改为直接开关抽屉（transform class），不再调宽度
+    const isDrawerMode = () => {
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        return window.innerWidth <= 932 && isLandscape;
+    };
+    
+    // 抽屉模式下侧边栏是否展开
+    const isSidebarOpen = () => sidebar.classList.contains('open');
+    // 抽屉模式下聊天面板是否展开
+    const isChatOpen = () => chatPanel.classList.contains('mobile-expanded');
+    
     document.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
         
         if (!isLandscape) return;
         
+        if (isDrawerMode()) {
+            // 抽屉模式：从左边缘滑动打开侧边栏（已关闭时）
+            if (touch.clientX < EDGE_SWIPE_ZONE && !isSidebarOpen()) {
+                edgeSwipeStartX = touch.clientX;
+                edgeSwipeActive = true;
+                edgeSwipeSide = 'left';
+            }
+            // 从右边缘滑动打开聊天（已关闭时）
+            else if (touch.clientX > window.innerWidth - EDGE_SWIPE_ZONE && !isChatOpen()) {
+                edgeSwipeStartX = touch.clientX;
+                edgeSwipeActive = true;
+                edgeSwipeSide = 'right';
+            }
+            return;
+        }
+        
+        // 非抽屉模式：原有宽度逻辑
         // 左边缘检测：侧边栏隐藏时
         if (touch.clientX < EDGE_SWIPE_ZONE && sidebar.offsetWidth === 0) {
             edgeSwipeStartX = touch.clientX;
@@ -1192,6 +1270,12 @@ function initResizeHandles() {
         
         const touch = e.touches[0];
         const deltaX = touch.clientX - edgeSwipeStartX;
+        
+        if (isDrawerMode()) {
+            // 抽屉模式：滑动超过阈值即展开（由 touchend 决定）
+            e.preventDefault();
+            return;
+        }
         
         if (edgeSwipeSide === 'left' && deltaX > 0) {
             // 从左边缘向右滑动：拉出侧边栏
@@ -1217,6 +1301,20 @@ function initResizeHandles() {
     document.addEventListener('touchend', () => {
         if (!edgeSwipeActive) { edgeSwipeSide = null; return; }
         
+        if (isDrawerMode()) {
+            // 抽屉模式：直接切换开合
+            if (edgeSwipeSide === 'left') {
+                sidebar.classList.add('open');
+                sidebar.classList.remove('closed');
+            } else if (edgeSwipeSide === 'right') {
+                chatPanel.classList.add('mobile-expanded');
+            }
+            edgeSwipeActive = false;
+            edgeSwipeSide = null;
+            return;
+        }
+        
+        // 非抽屉模式：原有阈值逻辑
         // 边缘滑动结束后：超过阈值则展开，否则收回
         if (edgeSwipeSide === 'left') {
             if (sidebar.offsetWidth < 80) {
@@ -1296,11 +1394,13 @@ initResizeHandles();
             header.style.height = '';
             header.style.opacity = '';
         }
+        syncHeaderHiddenState();
     }, { passive: true });
     
     // 双击 handle 切换显示/隐藏
     handle.addEventListener('dblclick', () => {
         header.classList.toggle('header-hidden');
+        syncHeaderHiddenState();
     });
 })();
 
@@ -1397,6 +1497,10 @@ initResizeHandles();
 // 面板直接滑动缩放（在侧边栏/聊天面板上滑动）
 function initPanelSwipeResize() {
     const isLandscape = () => window.matchMedia('(orientation: landscape)').matches;
+    
+    // BUGFIX: M20 横屏抽屉模式（v2.9）下禁用宽度滑动 —
+    // 侧边栏/聊天面板改为 fixed 覆盖式抽屉，宽度固定，滑动改宽度会破坏布局
+    if (window.innerWidth <= 932 && isLandscape()) return;
     
     let swipeActive = false;
     let swipeTarget = null; // 'sidebar' or 'chat'
@@ -1555,9 +1659,18 @@ function updateLandscapePanels() {
         room.classList.remove('panels-hidden');
         return;
     }
-    // 必须同时满足：class 标记 + 实际宽度为 0
-    const sidebarHidden = sidebar.classList.contains('closed') && sidebar.offsetWidth === 0;
-    const chatHidden = chatPanel.classList.contains('hidden') && chatPanel.offsetWidth === 0;
+    // BUGFIX: M20 抽屉模式（v2.9）— 用 class 判断，不再依赖 offsetWidth
+    // （fixed 抽屉的 offsetWidth 恒为面板宽度，宽度为 0 的判断不再成立）
+    const isDrawerMode = window.innerWidth <= 932 && isLandscape;
+    let sidebarHidden, chatHidden;
+    if (isDrawerMode) {
+        sidebarHidden = !sidebar.classList.contains('open') || sidebar.classList.contains('closed');
+        chatHidden = !chatPanel.classList.contains('mobile-expanded');
+    } else {
+        // 必须同时满足：class 标记 + 实际宽度为 0
+        sidebarHidden = sidebar.classList.contains('closed') && sidebar.offsetWidth === 0;
+        chatHidden = chatPanel.classList.contains('hidden') && chatPanel.offsetWidth === 0;
+    }
     if (sidebarHidden && chatHidden) {
         room.classList.add('panels-hidden');
     } else {

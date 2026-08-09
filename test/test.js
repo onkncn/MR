@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=11') && html.includes('style.css?v=6')) {
-      ok('缓存破坏: index.html app.js?v=11 + style.css?v=6');
+    if (html.includes('app.js?v=12') && html.includes('style.css?v=7')) {
+      ok('缓存破坏: index.html app.js?v=12 + style.css?v=7');
     } else {
-      fail('缓存破坏', 'app.js?v=11 / style.css?v=6 未找到');
+      fail('缓存破坏', 'app.js?v=12 / style.css?v=7 未找到');
     }
     
     // M16 移动端控制栏自动隐藏：断点与 CSS 横屏 932px 对齐
@@ -1102,13 +1102,13 @@ async function runTests() {
       fail('频道名隐藏样式', '未找到 .header-hidden');
     }
     
-    // M17 横屏控制栏布局：覆盖竖屏 fixed 定位 + 隐藏时释放空间
-    if (styleCss.includes('BUGFIX: M17 覆盖竖屏的 position:fixed') &&
+    // M17/M20 横屏控制栏布局：v2.9 悬浮胶囊（fixed + 居中 + 淡出隐藏）
+    if (styleCss.includes('BUGFIX: M17 控制栏隐藏时保持胶囊位置') &&
         styleCss.includes('.main-controls.auto-hidden') &&
-        styleCss.includes('height: 0')) {
-      ok('M17: 横屏控制栏 position 覆盖 + 隐藏释放布局空间');
+        styleCss.includes('border-radius: 30px')) {
+      ok('M17/M20: 横屏控制栏悬浮胶囊 + 淡出隐藏');
     } else {
-      fail('M17: 横屏控制栏布局', '未找到 position:static / height:0 修复');
+      fail('M17/M20: 横屏控制栏布局', '未找到悬浮胶囊 / 淡出隐藏修复');
     }
     
     // 频道 header 过渡动画
