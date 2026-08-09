@@ -566,6 +566,9 @@ function isMobileChatSheetActive() {
 function expandMobileChat() {
     if (!isMobileChatSheetActive()) return;
     chatPanel.classList.add('mobile-expanded');
+    // BUGFIX: M21 抽屉打开时控制栏保持显示（v2.10）
+    const mainControls = document.querySelector('.main-controls');
+    if (mainControls) mainControls.classList.add('drawer-open');
     if (chatSheetHint) chatSheetHint.textContent = '下滑或点此收起';
     // 展开后聚焦输入框（延迟等待动画）
     setTimeout(() => {
@@ -582,6 +585,9 @@ function expandMobileChat() {
 function collapseMobileChat() {
     if (!chatPanel.classList.contains('mobile-expanded')) return;
     chatPanel.classList.remove('mobile-expanded');
+    // BUGFIX: M21 抽屉关闭后恢复自动隐藏（v2.10）
+    const mainControls = document.querySelector('.main-controls');
+    if (mainControls) mainControls.classList.remove('drawer-open');
     if (chatSheetHint) chatSheetHint.textContent = '上滑查看更多';
 }
 
@@ -645,6 +651,101 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
     }
 });
 
+// ====== 更多菜单（v2.10）======
+// 横屏精简按钮栏：低频操作收进「⋯」菜单
+(function initMoreMenu() {
+    const moreMenuBtn = document.getElementById('moreMenuBtn');
+    const moreMenu = document.getElementById('moreMenu');
+    if (!moreMenuBtn || !moreMenu) return;
+    
+    let backdrop = null;
+    
+    function closeMoreMenu() {
+        moreMenu.classList.remove('open');
+        if (backdrop) {
+            backdrop.remove();
+            backdrop = null;
+        }
+        // 菜单关闭后允许控制栏自动隐藏
+        const mainControls = document.querySelector('.main-controls');
+        if (mainControls) mainControls.classList.remove('menu-open');
+    }
+    
+    function openMoreMenu() {
+        moreMenu.classList.add('open');
+        if (!backdrop) {
+            backdrop = document.createElement('button');
+            backdrop.className = 'more-menu-backdrop';
+            backdrop.addEventListener('click', closeMoreMenu);
+            document.body.appendChild(backdrop);
+        }
+        // 菜单打开时禁止控制栏自动隐藏
+        const mainControls = document.querySelector('.main-controls');
+        if (mainControls) mainControls.classList.add('menu-open');
+    }
+    
+    moreMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (moreMenu.classList.contains('open')) {
+            closeMoreMenu();
+        } else {
+            openMoreMenu();
+        }
+    });
+    
+    // 菜单项：触发对应原按钮的 click（复用现有逻辑）
+    moreMenu.addEventListener('click', (e) => {
+        const item = e.target.closest('.more-menu-item');
+        if (!item) return;
+        const targetId = item.dataset.target;
+        if (targetId) {
+            const targetBtn = document.getElementById(targetId);
+            if (targetBtn) {
+                targetBtn.click();
+                // 同步菜单状态标记
+                updateMoreMenuStatus();
+            }
+        }
+        closeMoreMenu();
+    });
+    
+    // 同步菜单状态标记（降噪/TTS 开关状态）
+    function updateMoreMenuStatus() {
+        const denoiseBtn = document.getElementById('toggleDenoiseBtn');
+        const denoiseStatus = document.getElementById('moreMenuDenoiseStatus');
+        if (denoiseBtn && denoiseStatus) {
+            const on = !denoiseBtn.classList.contains('active');
+            denoiseStatus.textContent = on ? '开' : '关';
+            denoiseStatus.classList.toggle('off', !on);
+        }
+        const ttsBtn = document.getElementById('toggleTtsBtn');
+        const ttsStatus = document.getElementById('moreMenuTtsStatus');
+        if (ttsBtn && ttsStatus) {
+            const on = !ttsBtn.classList.contains('active');
+            ttsStatus.textContent = on ? '开' : '关';
+            ttsStatus.classList.toggle('off', !on);
+        }
+    }
+    
+    // 每次打开菜单时刷新状态
+    moreMenuBtn.addEventListener('click', () => {
+        if (moreMenu.classList.contains('open')) updateMoreMenuStatus();
+    });
+    
+    // 状态变化时同步（降噪/TTS 切换）
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('#toggleDenoiseBtn') || e.target.closest('#toggleTtsBtn')) {
+            setTimeout(updateMoreMenuStatus, 50);
+        }
+    });
+    
+    // 初始状态
+    updateMoreMenuStatus();
+    
+    // 暴露给自动隐藏逻辑
+    window.__closeMoreMenu = closeMoreMenu;
+})();
+
 // BUGFIX: M20 横屏抽屉模式 — 点击主内容区关闭已展开的抽屉
 document.querySelector('.main-content')?.addEventListener('click', (e) => {
     const isDrawerMode = window.innerWidth <= 932
@@ -657,6 +758,11 @@ document.querySelector('.main-content')?.addEventListener('click', (e) => {
         sidebar.classList.remove('open');
         sidebar.classList.add('closed');
         sidebarOpen = false;
+        // BUGFIX: M21 侧边栏关闭后恢复控制栏自动隐藏（v2.10）
+        const mainControls = document.querySelector('.main-controls');
+        if (mainControls && !chatPanel.classList.contains('mobile-expanded')) {
+            mainControls.classList.remove('drawer-open');
+        }
         updateLandscapePanels();
     }
     // 关闭聊天抽屉
@@ -668,8 +774,11 @@ document.querySelector('.main-content')?.addEventListener('click', (e) => {
 // 横竖屏切换 / 窗口 resize 时重置聊天面板状态
 const originalResizeHandler = window.onresize;
 window.addEventListener('resize', () => {
-    if (!isPortraitMobile()) {
-        // 横屏或桌面：移除移动端展开态
+    // BUGFIX: M21 横屏抽屉模式（v2.10）不重置 mobile-expanded（右抽屉由用户手势开关）
+    const isDrawerMode = window.innerWidth <= 932
+        && window.matchMedia('(orientation: landscape)').matches;
+    if (!isPortraitMobile() && !isDrawerMode) {
+        // 横屏（桌面式）或桌面：移除移动端展开态
         chatPanel.classList.remove('mobile-expanded');
         if (chatSheetHint) chatSheetHint.textContent = '上滑查看更多';
     }
@@ -681,6 +790,9 @@ placeholderSelectBtn.addEventListener('click', () => {
     sidebar.classList.add('open');
     sidebar.classList.remove('closed');
     sidebarOverlay.classList.add('active');
+    // BUGFIX: M21 侧边栏打开时控制栏保持显示（v2.10）
+    const mainControls = document.querySelector('.main-controls');
+    if (mainControls) mainControls.classList.add('drawer-open');
 });
 
 // ====== 自定义音量滑块 ======
@@ -870,7 +982,17 @@ sidebarToggle.addEventListener('click', toggleSidebar);
     function hideControls() {
         // 竖屏不隐藏
         if (!isLandscape()) return;
-        if (document.querySelector('.control-btn-wrapper.active')) {
+        // BUGFIX: M21 抽屉/菜单打开时不隐藏控制栏（v2.10）
+        const chatExpanded = document.getElementById('chatPanel')?.classList.contains('mobile-expanded');
+        const sidebarOpen = document.querySelector('.sidebar-left')?.classList.contains('open');
+        const menuOpen = mainControls.classList.contains('menu-open');
+        if (chatExpanded || sidebarOpen || menuOpen) {
+            hideTimer = setTimeout(hideControls, HIDE_DELAY);
+            return;
+        }
+        // BUGFIX: M21 音量滑块打开时不隐藏（active 加在 button 上，原检查 wrapper 失效）
+        const activeVolume = mainControls.querySelector('.control-btn-wrapper .volume-control.active');
+        if (activeVolume) {
             hideTimer = setTimeout(hideControls, HIDE_DELAY);
             return;
         }
@@ -1303,11 +1425,14 @@ function initResizeHandles() {
         
         if (isDrawerMode()) {
             // 抽屉模式：直接切换开合
+            const mainControls = document.querySelector('.main-controls');
             if (edgeSwipeSide === 'left') {
                 sidebar.classList.add('open');
                 sidebar.classList.remove('closed');
+                if (mainControls) mainControls.classList.add('drawer-open');
             } else if (edgeSwipeSide === 'right') {
                 chatPanel.classList.add('mobile-expanded');
+                if (mainControls) mainControls.classList.add('drawer-open');
             }
             edgeSwipeActive = false;
             edgeSwipeSide = null;
@@ -1618,6 +1743,8 @@ initPanelSwipeResize();
 function toggleSidebar() {
     sidebarOpen = !sidebarOpen;
     const isMobile = window.innerWidth <= 768;
+    // BUGFIX: M21 抽屉状态同步到控制栏（v2.10）
+    const mainControls = document.querySelector('.main-controls');
     
     if (isMobile) {
         if (sidebarOpen) {
@@ -1636,6 +1763,16 @@ function toggleSidebar() {
         } else {
             sidebar.classList.remove('open');
             sidebar.classList.add('closed');
+        }
+    }
+    // 横屏抽屉模式：同步控制栏显隐状态
+    const isDrawerMode = window.innerWidth <= 932
+        && window.matchMedia('(orientation: landscape)').matches;
+    if (isDrawerMode && mainControls) {
+        if (sidebarOpen) {
+            mainControls.classList.add('drawer-open');
+        } else if (!chatPanel.classList.contains('mobile-expanded')) {
+            mainControls.classList.remove('drawer-open');
         }
     }
     updateLandscapePanels();

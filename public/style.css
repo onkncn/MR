@@ -1144,6 +1144,83 @@ body {
     display: none;
 }
 
+/* ===== 更多菜单（v2.10）===== */
+/* 更多按钮：桌面/竖屏默认隐藏（完整按钮栏），横屏显示（精简胶囊） */
+.more-menu-btn {
+    display: none !important;
+}
+
+.more-menu {
+    display: none;
+    position: fixed;
+    bottom: 74px;
+    right: 12px;
+    min-width: 168px;
+    background: rgba(32,34,37,0.97);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 6px;
+    z-index: 320;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+    flex-direction: column;
+    gap: 2px;
+}
+
+.more-menu.open {
+    display: flex;
+}
+
+.more-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: #dcddde;
+    font-size: 13px;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.more-menu-item:active {
+    background: rgba(88,101,242,0.25);
+}
+
+.more-menu-item svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.more-menu-item span:not(.more-menu-status) {
+    flex: 1;
+}
+
+.more-menu-status {
+    font-size: 11px;
+    color: #3ba55c;
+}
+
+.more-menu-status.off {
+    color: #8e9297;
+}
+
+/* 更多菜单遮罩（点外部关闭） */
+.more-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 315;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
 /* 最小化浮窗状态 */
 .screen-minimized-thumb {
     position: fixed;
@@ -3269,6 +3346,19 @@ body {
         display: none !important;
     }
     
+    /* BUGFIX: M21 横屏精简按钮栏（v2.10）—
+       低频按钮收进「更多」菜单，胶囊只留核心操作 */
+    .more-menu-btn {
+        display: flex !important;
+    }
+    
+    .denoise-btn,
+    .custom-audio-btn,
+    .tts-btn,
+    .orientation-btn {
+        display: none !important;
+    }
+    
     .chat-panel.hidden {
         transform: translateX(100%);
     }
@@ -3309,6 +3399,14 @@ body {
         transform: translateX(-50%) translateY(120%);
         opacity: 0;
         pointer-events: none;
+    }
+    
+    /* BUGFIX: M21 菜单/抽屉打开时强制显示控制栏（v2.10） */
+    .main-controls.menu-open,
+    .main-controls.drawer-open {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        transform: translateX(-50%) !important;
     }
     
     .control-btn {
