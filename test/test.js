@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=21') && html.includes('style.css?v=17')) {
-      ok('缓存破坏: index.html app.js?v=21 + style.css?v=17');
+    if (html.includes('app.js?v=21') && html.includes('style.css?v=18')) {
+      ok('缓存破坏: index.html app.js?v=21 + style.css?v=18');
     } else {
-      fail('缓存破坏', 'app.js?v=21 / style.css?v=17 未找到');
+      fail('缓存破坏', 'app.js?v=21 / style.css?v=18 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1103,13 +1103,14 @@ async function runTests() {
       fail('频道名隐藏样式', '未找到 .header-hidden');
     }
     
-    // M17/M24 横屏控制栏布局：v2.16 悬浮胶囊（fixed + 居中 + 隐藏可唤出）
-    if (styleCss.includes('BUGFIX: M17/M23/M24 控制栏隐藏机制') &&
+    // M17/M24 横屏控制栏布局：v2.20 悬浮胶囊（fixed + 居中 + 隐藏可唤出）
+    if (styleCss.includes('BUGFIX: M17/M23/M24/M27 控制栏隐藏机制') &&
         styleCss.includes('.main-controls.auto-hidden') &&
+        styleCss.includes('pointer-events: auto') &&
         styleCss.includes('border-radius: 30px')) {
-      ok('M17/M24: 横屏控制栏悬浮胶囊 + 隐藏机制');
+      ok('M17/M24: 横屏控制栏悬浮胶囊 + 隐藏机制（M27 隐藏但可点）');
     } else {
-      fail('M17/M24: 横屏控制栏布局', '未找到悬浮胶囊 / 隐藏机制');
+      fail('M17/M24: 横屏控制栏布局', '未找到悬浮胶囊 / 隐藏机制 / M27');
     }
     
     // 频道 header 过渡动画
@@ -1285,11 +1286,20 @@ async function runTests() {
       fail('M25-8: 核心按钮', 'mobileChatBtn/moreMenuBtn 缺失');
     }
     
-    // M25-9: 缓存版本号递增（v2.19: style.css v17 / app.js v21）
-    if (m23Html.includes('app.js?v=21') && m23Html.includes('style.css?v=17')) {
-      ok('M25-9: 缓存破坏 v2.19 (app.js?v=21 + style.css?v=17)');
+    // M27-1: 横屏 auto-hidden 视觉隐藏但可点（M27 关键修复 — iPhone 真机可用）
+    // 根因: 基础规则(656行) pointer-events:none 在横屏下仍生效 → 按钮点不到。
+    // 修复: 横屏 auto-hidden 块显式 pointer-events:auto（视觉 opacity:0 保留）。
+    if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?pointer-events:\s*auto\s*;/)) {
+      ok('M27-1: 横屏 auto-hidden 隐藏但可点（pointer-events:auto 覆盖基础 none）');
     } else {
-      fail('M25-9: 缓存版本', 'v21/v17 未找到');
+      fail('M27-1: 横屏 auto-hidden 可点', '横屏块未显式 pointer-events:auto');
+    }
+    
+    // M25-9: 缓存版本号递增（v2.20: style.css v18 / app.js v21）
+    if (m23Html.includes('app.js?v=21') && m23Html.includes('style.css?v=18')) {
+      ok('M25-9: 缓存破坏 v2.20 (app.js?v=21 + style.css?v=18)');
+    } else {
+      fail('M25-9: 缓存版本', 'v21/v18 未找到');
     }
   }
 

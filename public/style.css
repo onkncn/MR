@@ -3428,11 +3428,14 @@ body {
         display: none;
     }
     
-    /* BUGFIX: M17/M23/M24 控制栏隐藏机制（v2.16）
+    /* BUGFIX: M17/M23/M24/M27 控制栏隐藏机制（v2.20）
        — 保留隐藏（沉浸式观看/共享）：无操作 3s 淡出 opacity:0。
-       — 保留位置（不下沉）：按钮仍在原位，document 级 touchstart 唤出后
-         同一击的 click 直接落到按钮 → 唤出+操作一次完成，无需点两次。
-       — pointer-events:none 仅隐藏时拦截，唤出后自动恢复 auto。 */
+       — v2.20 (M27) 关键修复: 移除 pointer-events:none —— 视觉完全隐藏
+         但按钮仍可点（touch 直接命中按钮 → iOS 原生 click → 功能触发）。
+         此前依赖 M25/M26 坐标命中检测，但 iPhone 真机坐标可能有偏差
+         （安全区/视觉视口），导致点更多按钮"无变化"。
+         现在点击完全走原生事件链，不依赖坐标检测。
+       — 点控制栏空白区/按钮位置 → 唤出+操作一次完成；点主内容区唤出不变。 */
     .main-controls.auto-hidden {
         height: auto;
         padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
@@ -3440,7 +3443,11 @@ body {
         overflow: hidden;
         transform: translateX(-50%);
         opacity: 0;
-        pointer-events: none;
+        /* M27 关键: 显式覆盖基础规则(656行)的 pointer-events:none。
+           基础规则在横屏下仍生效，若不移除/覆盖，按钮始终不可点。
+           现在视觉完全隐藏(opacity:0)但可点: touch 直接命中按钮 →
+           iOS 原生 click → 功能触发（不依赖坐标检测）。 */
+        pointer-events: auto;
         transition: opacity 0.3s ease;
     }
     
