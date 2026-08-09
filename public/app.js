@@ -350,7 +350,7 @@ function isMobileDevice() {
 function initSidebar() {
     const isMobile = window.innerWidth <= 768;
     // BUGFIX: M20 横屏抽屉模式（v2.9）— 抽屉模式默认收起
-    const isDrawerMode = window.innerWidth <= 932
+    const isDrawerMode = window.innerWidth <= 1024
         && window.matchMedia('(orientation: landscape)').matches;
     if (isMobile || isDrawerMode) {
         sidebarOpen = false;
@@ -368,8 +368,8 @@ window.addEventListener('resize', () => {
     if (!room.classList.contains('hidden')) {
         const isMobile = window.innerWidth <= 768;
         const isLandscape = window.matchMedia('(orientation: landscape)').matches && isMobile;
-        // BUGFIX: M20 横屏抽屉模式（v2.9）— 932px 内横屏手机用抽屉布局
-        const isDrawerMode = window.innerWidth <= 932
+        // BUGFIX: M20 横屏抽屉模式（v2.9）— 1024px 内横屏手机用抽屉布局
+        const isDrawerMode = window.innerWidth <= 1024
             && window.matchMedia('(orientation: landscape)').matches;
         
         if (!isMobile && !isDrawerMode) {
@@ -442,7 +442,7 @@ window.addEventListener('orientationchange', () => {
     mainContent.addEventListener('touchstart', (e) => {
         // 仅在横屏移动端生效
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-        const isMobile = window.innerWidth <= 932;
+        const isMobile = window.innerWidth <= 1024;
         if (!isLandscape || !isMobile) return;
 
         // 忽略控制栏和侧边栏区域的触摸
@@ -458,7 +458,7 @@ window.addEventListener('orientationchange', () => {
         if (startY === 0) return;
 
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-        const isMobile = window.innerWidth <= 932;
+        const isMobile = window.innerWidth <= 1024;
         if (!isLandscape || !isMobile) {
             startY = 0;
             return;
@@ -558,7 +558,7 @@ function isPortraitMobile() {
 
 function isMobileChatSheetActive() {
     // BUGFIX: M20 竖屏用 bottom sheet，横屏（抽屉模式）用右抽屉，均支持 mobile-expanded
-    const isLandscapeMobile = window.innerWidth <= 932
+    const isLandscapeMobile = window.innerWidth <= 1024
         && window.matchMedia('(orientation: landscape)').matches;
     return (isPortraitMobile() || isLandscapeMobile) && !room.classList.contains('chat-only');
 }
@@ -748,7 +748,7 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
 
 // BUGFIX: M20 横屏抽屉模式 — 点击主内容区关闭已展开的抽屉
 document.querySelector('.main-content')?.addEventListener('click', (e) => {
-    const isDrawerMode = window.innerWidth <= 932
+    const isDrawerMode = window.innerWidth <= 1024
         && window.matchMedia('(orientation: landscape)').matches;
     if (!isDrawerMode) return;
     if (e.target.closest('.sidebar-left') || e.target.closest('.chat-panel')) return;
@@ -775,7 +775,7 @@ document.querySelector('.main-content')?.addEventListener('click', (e) => {
 const originalResizeHandler = window.onresize;
 window.addEventListener('resize', () => {
     // BUGFIX: M21 横屏抽屉模式（v2.10）不重置 mobile-expanded（右抽屉由用户手势开关）
-    const isDrawerMode = window.innerWidth <= 932
+    const isDrawerMode = window.innerWidth <= 1024
         && window.matchMedia('(orientation: landscape)').matches;
     if (!isPortraitMobile() && !isDrawerMode) {
         // 横屏（桌面式）或桌面：移除移动端展开态
@@ -960,10 +960,10 @@ sidebarToggle.addEventListener('click', toggleSidebar);
     if (!mainControls) return;
     
     // 桌面端不启用
-    // BUGFIX: M16 断点与 CSS 横屏布局一致（932px）而非 768px —
-    // 原 768px 导致 769-932px 宽的大屏手机横屏（iPhone Pro Max 等）自动隐藏失效，
-    // 而 CSS 却已按 932px 应用横屏布局，功能与样式不一致。
-    if (window.innerWidth > 932) return;
+    // BUGFIX: M16 断点与 CSS 横屏布局一致（1024px）而非 768px —
+    // 原 768px 导致 769-1024px 宽的大屏手机横屏（iPhone Pro Max 等）自动隐藏失效，
+    // 而 CSS 却已按 1024px 应用横屏布局，功能与样式不一致。
+    if (window.innerWidth > 1024) return;
     
     let hideTimer = null;
     const HIDE_DELAY = 3000;
@@ -1342,7 +1342,7 @@ function initResizeHandles() {
     // 抽屉模式下边缘滑动改为直接开关抽屉（transform class），不再调宽度
     const isDrawerMode = () => {
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-        return window.innerWidth <= 932 && isLandscape;
+        return window.innerWidth <= 1024 && isLandscape;
     };
     
     // 抽屉模式下侧边栏是否展开
@@ -1560,7 +1560,7 @@ initResizeHandles();
         // BUGFIX: M16 横屏移动端由 initControlsAutoHide 单独管理（class 方式 3s 下沉），
         // 本逻辑用 inline style 控制同一元素会与之冲突（opacity 互相覆盖、恢复需多次点击）。
         // 横屏移动端直接跳过，桌面/平板全屏模式仍由本逻辑管理。
-        if (window.innerWidth <= 932 && matchMedia('(orientation: landscape)').matches) return false;
+        if (window.innerWidth <= 1024 && matchMedia('(orientation: landscape)').matches) return false;
         
         // 桌面端/横屏移动端：侧边栏和聊天面板都需要收起
         const chatStyle = getComputedStyle(chatPanel);
@@ -1625,7 +1625,7 @@ function initPanelSwipeResize() {
     
     // BUGFIX: M20 横屏抽屉模式（v2.9）下禁用宽度滑动 —
     // 侧边栏/聊天面板改为 fixed 覆盖式抽屉，宽度固定，滑动改宽度会破坏布局
-    if (window.innerWidth <= 932 && isLandscape()) return;
+    if (window.innerWidth <= 1024 && isLandscape()) return;
     
     let swipeActive = false;
     let swipeTarget = null; // 'sidebar' or 'chat'
@@ -1766,7 +1766,7 @@ function toggleSidebar() {
         }
     }
     // 横屏抽屉模式：同步控制栏显隐状态
-    const isDrawerMode = window.innerWidth <= 932
+    const isDrawerMode = window.innerWidth <= 1024
         && window.matchMedia('(orientation: landscape)').matches;
     if (isDrawerMode && mainControls) {
         if (sidebarOpen) {
@@ -1798,7 +1798,7 @@ function updateLandscapePanels() {
     }
     // BUGFIX: M20 抽屉模式（v2.9）— 用 class 判断，不再依赖 offsetWidth
     // （fixed 抽屉的 offsetWidth 恒为面板宽度，宽度为 0 的判断不再成立）
-    const isDrawerMode = window.innerWidth <= 932 && isLandscape;
+    const isDrawerMode = window.innerWidth <= 1024 && isLandscape;
     let sidebarHidden, chatHidden;
     if (isDrawerMode) {
         sidebarHidden = !sidebar.classList.contains('open') || sidebar.classList.contains('closed');

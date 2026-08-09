@@ -1036,21 +1036,22 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=14') && html.includes('style.css?v=10')) {
-      ok('缓存破坏: index.html app.js?v=14 + style.css?v=10');
+    if (html.includes('app.js?v=15') && html.includes('style.css?v=11')) {
+      ok('缓存破坏: index.html app.js?v=15 + style.css?v=11');
     } else {
-      fail('缓存破坏', 'app.js?v=14 / style.css?v=10 未找到');
+      fail('缓存破坏', 'app.js?v=15 / style.css?v=11 未找到');
     }
     
-    // M16 移动端控制栏自动隐藏：断点与 CSS 横屏 932px 对齐
-    if (appJs.includes('window.innerWidth > 932')) {
-      ok('M16: 控制栏自动隐藏断点与 CSS 横屏 932px 对齐');
+    // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
+    // (v2.13: 932→1024 覆盖 iPhone Pro Max 横屏 956px)
+    if (appJs.includes('window.innerWidth > 1024')) {
+      ok('M16/M22: 控制栏自动隐藏断点与 CSS 横屏 1024px 对齐');
     } else {
-      fail('M16: 自动隐藏断点', '未找到 932px 断点');
+      fail('M16/M22: 自动隐藏断点', '未找到 1024px 断点');
     }
     
     // M16 横屏移动端跳过第二套全屏隐藏（避免双重控制冲突）
-    if (appJs.includes('window.innerWidth <= 932 && matchMedia') &&
+    if (appJs.includes('window.innerWidth <= 1024 && matchMedia') &&
         appJs.includes('initControlsAutoHide 单独管理')) {
       ok('M16: 横屏移动端由单套逻辑管理（无双重隐藏冲突）');
     } else {

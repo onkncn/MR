@@ -3224,7 +3224,7 @@ body {
 }
 
 /* ========== 横屏适配 - 参考桌面版三栏布局 ========== */
-@media only screen and (max-width: 932px) and (orientation: landscape) {
+@media only screen and (max-width: 1024px) and (orientation: landscape) {
     /* ===== 横屏沉浸式布局（v2.9）=====
        主内容全屏 + 覆盖式抽屉 + 悬浮胶囊控制栏 */
     /* v2.11 动态尺寸：横屏按钮随高度 vh 变化（高度受限，用 vh 更合理） */
@@ -3591,7 +3591,7 @@ body {
 
 /* iPhone 横屏特定适配 */
 @supports (-webkit-touch-callout: none) {
-    @media only screen and (max-width: 932px) and (orientation: landscape) {
+    @media only screen and (max-width: 1024px) and (orientation: landscape) {
         /* iPhone 底部安全区域（横屏时手势条在底部） */
         .main-controls {
             padding-bottom: max(8px, env(safe-area-inset-bottom));
