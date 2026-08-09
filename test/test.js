@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=19') && html.includes('style.css?v=15')) {
-      ok('缓存破坏: index.html app.js?v=19 + style.css?v=15');
+    if (html.includes('app.js?v=21') && html.includes('style.css?v=17')) {
+      ok('缓存破坏: index.html app.js?v=21 + style.css?v=17');
     } else {
-      fail('缓存破坏', 'app.js?v=19 / style.css?v=15 未找到');
+      fail('缓存破坏', 'app.js?v=21 / style.css?v=17 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1207,7 +1207,7 @@ async function runTests() {
     
     // M25-1: document 级 touchstart 唤出机制存在（修复移动端无法唤出）
     if (m23AppJs.includes("document.addEventListener('touchstart'") &&
-        m23AppJs.includes('M24/M25 横屏移动端唤出机制')) {
+        m23AppJs.includes('M24/M25/M26 横屏移动端唤出机制')) {
       ok('M25-1: document 级 touchstart 唤出机制存在（移动端可唤出）');
     } else {
       fail('M25-1: document touchstart 唤出', '未找到 M25 唤出机制');
@@ -1219,6 +1219,25 @@ async function runTests() {
       ok('M25-2: 坐标命中检测存在（auto-hidden 下 touch 按钮位置直接触发）');
     } else {
       fail('M25-2: 坐标命中检测', '未找到 hitBtn 命中逻辑');
+    }
+    
+    // M25-2b: 鼠标场景兜底 — mainContent click 也做坐标命中检测（M25b）
+    if (m23AppJs.includes('M25b') &&
+        m23AppJs.includes('mainContent.addEventListener(\'click\'')) {
+      ok('M25-2b: 鼠标场景兜底存在（mainContent click 坐标命中，M25b）');
+    } else {
+      fail('M25-2b: 鼠标场景兜底', '未找到 M25b 逻辑');
+    }
+    
+    // M26-1: preventDefault 阻止合成 click（touchstart 命中按钮时）
+    // 根因: auto-hidden 时 M25 触发按钮（开菜单）→ showControls 恢复可点
+    //      → touchend 合成 click 二次触发（关菜单）→ 横屏"不可用"（竖屏无此问题）
+    if (m23AppJs.includes('e.preventDefault()') &&
+        m23AppJs.includes('{ passive: false }') &&
+        m23AppJs.includes('M26')) {
+      ok('M26-1: touchstart 命中按钮时 preventDefault 阻止合成 click（防二次触发）');
+    } else {
+      fail('M26-1: preventDefault 防二次触发', '未找到 M26 逻辑');
     }
     
     // M25-3: 唤出后同一击可操作（showControls 后 click 落按钮）
@@ -1266,11 +1285,11 @@ async function runTests() {
       fail('M25-8: 核心按钮', 'mobileChatBtn/moreMenuBtn 缺失');
     }
     
-    // M25-9: 缓存版本号递增（v2.17: style.css v15 / app.js v19）
-    if (m23Html.includes('app.js?v=19') && m23Html.includes('style.css?v=15')) {
-      ok('M25-9: 缓存破坏 v2.17 (app.js?v=19 + style.css?v=15)');
+    // M25-9: 缓存版本号递增（v2.19: style.css v17 / app.js v21）
+    if (m23Html.includes('app.js?v=21') && m23Html.includes('style.css?v=17')) {
+      ok('M25-9: 缓存破坏 v2.19 (app.js?v=21 + style.css?v=17)');
     } else {
-      fail('M25-9: 缓存版本', 'v19/v15 未找到');
+      fail('M25-9: 缓存版本', 'v21/v17 未找到');
     }
   }
 

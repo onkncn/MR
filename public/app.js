@@ -1006,19 +1006,36 @@ sidebarToggle.addEventListener('click', toggleSidebar);
         mainContent.addEventListener('click', (e) => {
             if (e.target.closest('.main-controls') || e.target.closest('button')) return;
             if (mainControls.classList.contains('auto-hidden')) {
+                // M25b: 鼠标/触控板场景兜底 — 点击穿透到 main-content 时，
+                //       检测坐标是否命中按钮（auto-hidden 后按钮 pointer-events:none，
+                //       click 的 hit-test target 是 main-content，但用户点的是按钮位置）。
+                //       touch 场景由 M25 touchstart 先唤出（此处 auto-hidden 已移除，不重复触发）。
+                if (e.clientX > 0 || e.clientY > 0) {
+                    const hitBtn = Array.from(mainControls.querySelectorAll('button')).find((b) => {
+                        const r = b.getBoundingClientRect();
+                        return e.clientX >= r.left && e.clientX <= r.right &&
+                               e.clientY >= r.top && e.clientY <= r.bottom;
+                    });
+                    if (hitBtn) {
+                        hitBtn.click();
+                    }
+                }
                 showControls();
             }
         });
     }
     
-    // BUGFIX: M24/M25 横屏移动端唤出机制（v2.17）
+    // BUGFIX: M24/M25/M26 横屏移动端唤出机制（v2.19）
     // 原方案(v2.16): document touchstart 唤出后，随后的 click 落到按钮。
     //   但 iOS 触摸序列中 click 的 target 在 touchstart 时经 hit-testing 锁定：
     //   auto-hidden 时按钮 pointer-events:none → hit-test 目标是下层 main-content
     //   → 唤出后 click 仍落不到按钮 → "更多按钮失效"。
-    // 修复: touchstart 时做坐标命中检测（不依赖 hit-testing）：
-    //   touch 位置在按钮 rect 内 → 直接 btn.click() 触发按钮逻辑（唤出+操作一次完成），
-    //   原生 click 派发到 main-content 只触发 showControls（已显示，无副作用）。
+    // v2.17 (M25): touchstart 时坐标命中检测直接触发按钮 → 解决 hit-test 问题。
+    //   但新问题: showControls() 恢复按钮可点后，touchend 的合成 click 落到按钮
+    //   → 二次触发 moreMenuBtn → open→close 瞬间完成 → "横屏不可用"（竖屏无
+    //   auto-hide 无此问题，正好匹配用户反馈"竖屏可用横屏不可用"）。
+    // v2.19 (M26): 命中按钮时 preventDefault() 阻止合成 click（避免二次触发）。
+    //   注: 需 passive:false 才能 preventDefault；仅命中按钮时阻止，不影响页面滚动。
     document.addEventListener('touchstart', (e) => {
         // 仅横屏移动端生效
         if (!isLandscape() || window.innerWidth > 1024) return;
@@ -1038,12 +1055,15 @@ sidebarToggle.addEventListener('click', toggleSidebar);
                            touch.clientY >= r.top && touch.clientY <= r.bottom;
                 });
                 if (hitBtn) {
+                    // M26: 阻止合成 click — 否则 showControls 恢复可点后，
+                    // touchend 的 click 落到按钮二次触发（菜单开→关）
+                    e.preventDefault();
                     hitBtn.click();
                 }
             }
             showControls();
         }
-    }, { passive: true });
+    }, { passive: false });
     
     // 控制栏自身触摸/鼠标交互
     mainControls.addEventListener('touchstart', showControls, { passive: true });
