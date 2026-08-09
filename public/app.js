@@ -672,6 +672,14 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
     }
     
     function openMoreMenu() {
+        // M31: 菜单右缘对齐控制栏右缘（v2.24）— 不再贴屏幕右缘 12px
+        // 控制栏是居中胶囊，right:12px 固定会让菜单贴屏幕边；改为跟随胶囊。
+        const mainControls = document.querySelector('.main-controls');
+        if (mainControls) {
+            const cr = mainControls.getBoundingClientRect();
+            const gap = 6;
+            moreMenu.style.right = Math.max(8, Math.round(window.innerWidth - cr.right + gap)) + 'px';
+        }
         moreMenu.classList.add('open');
         if (!backdrop) {
             backdrop = document.createElement('button');
@@ -680,7 +688,6 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
             document.body.appendChild(backdrop);
         }
         // 菜单打开时禁止控制栏自动隐藏
-        const mainControls = document.querySelector('.main-controls');
         if (mainControls) mainControls.classList.add('menu-open');
     }
     

@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=23') && html.includes('style.css?v=19')) {
-      ok('缓存破坏: index.html app.js?v=23 + style.css?v=19');
+    if (html.includes('app.js?v=24') && html.includes('style.css?v=19')) {
+      ok('缓存破坏: index.html app.js?v=24 + style.css?v=19');
     } else {
-      fail('缓存破坏', 'app.js?v=23 / style.css?v=19 未找到');
+      fail('缓存破坏', 'app.js?v=24 / style.css?v=19 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1324,11 +1324,25 @@ async function runTests() {
       fail('M29-1: 点外面关闭菜单', '未找到 M29 逻辑');
     }
     
-    // M25-9: 缓存版本号递增（v2.22: style.css v19 / app.js v23）
-    if (m23Html.includes('app.js?v=23') && m23Html.includes('style.css?v=19')) {
-      ok('M25-9: 缓存破坏 v2.22 (app.js?v=23 + style.css?v=19)');
+    // M31-1: 更多菜单右缘对齐控制栏右缘（v2.24 — 用户反馈菜单太靠右）
+    // 根因: .more-menu 基础 right:12px 固定贴屏幕右缘；横屏胶囊居中时
+    //       菜单出现在屏幕最右，用户觉得"太靠右"。
+    // 修复: openMoreMenu 时 JS 计算 right = 视口宽 - 控制栏右缘 + 6px，
+    //       菜单跟随胶囊（更多按钮正上方），不再贴屏幕边。
+    if (m23AppJs.includes('M31') &&
+        m23AppJs.includes('moreMenu.style.right') &&
+        m23AppJs.includes('getBoundingClientRect()') &&
+        m23AppJs.includes('window.innerWidth - cr.right')) {
+      ok('M31-1: 菜单右缘对齐控制栏右缘（跟随胶囊，不再贴屏幕边）');
     } else {
-      fail('M25-9: 缓存版本', 'v23/v19 未找到');
+      fail('M31-1: 菜单右缘对齐', '未找到 M31 动态定位逻辑');
+    }
+    
+    // M25-9: 缓存版本号递增（v2.24: style.css v19 / app.js v24）
+    if (m23Html.includes('app.js?v=24') && m23Html.includes('style.css?v=19')) {
+      ok('M25-9: 缓存破坏 v2.24 (app.js?v=24 + style.css?v=19)');
+    } else {
+      fail('M25-9: 缓存版本', 'v24/v19 未找到');
     }
   }
 
