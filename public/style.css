@@ -2917,20 +2917,18 @@ body {
         border-top: 1px solid #202225;
         z-index: 60;
         display: flex;
-        justify-content: flex-start;
-        overflow-x: auto;
+        justify-content: center;
+        align-items: center;
+        /* v2.12 核心 5 按钮居中排列，无需横滑 */
+        overflow: visible;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
     }
     
-    /* BUGFIX: M19 竖屏按钮栏居中（兼容方案） —
-       ::before/::after 的 margin:auto 在内容不超宽时把按钮组挤到居中，
-       内容超宽（小屏+按钮多）时 margin 自动归零，从起点可横滑，不裁切 */
+    /* v2.12 居中辅助（仅保留两端占位，居中由 justify-content:center 完成） */
     .main-controls::before,
     .main-controls::after {
-        content: '';
-        margin: auto;
-        flex-shrink: 0;
+        content: none;
     }
     
     .main-controls::-webkit-scrollbar {
@@ -2967,6 +2965,19 @@ body {
     /* 移动端聊天按钮：显示在控制栏 */
     .mobile-chat-btn {
         display: flex !important;
+    }
+    
+    /* v2.12 整个按钮栏适配：小屏显示核心 5 个（🎤📢🖥💬⋯）
+       低频按钮收进「更多」菜单，不横滑、居中排列 */
+    .more-menu-btn {
+        display: flex !important;
+    }
+    
+    .denoise-btn,
+    .custom-audio-btn,
+    .tts-btn,
+    .orientation-btn {
+        display: none !important;
     }
     
     /* 桌面全屏聊天按钮在移动端隐藏（用 bottom sheet 替代） */
