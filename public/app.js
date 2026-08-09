@@ -709,6 +709,21 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
         closeMoreMenu();
     });
     
+    // M29: 点击菜单/按钮之外的任何区域关闭菜单（v2.22）
+    // 根因: 此前只有点 backdrop 或菜单项才关闭菜单。用户习惯"点外面关闭"，
+    //       点主内容区时菜单不关 → backdrop（透明全屏 z-index:315）残留 →
+    //       后续所有按钮点击被 backdrop 拦截（透明看不见）→ "横屏更多不可用"。
+    document.addEventListener('click', (e) => {
+        if (!moreMenu.classList.contains('open')) return;
+        if (e.target.closest('#moreMenu') || e.target.closest('#moreMenuBtn')) return;
+        closeMoreMenu();
+    });
+    
+    // M29: 横竖屏切换时强制关闭菜单（避免旋转后 backdrop 残留拦截按钮）
+    window.addEventListener('orientationchange', () => {
+        closeMoreMenu();
+    });
+    
     // 同步菜单状态标记（降噪/TTS 开关状态）
     function updateMoreMenuStatus() {
         const denoiseBtn = document.getElementById('toggleDenoiseBtn');

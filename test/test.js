@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=22') && html.includes('style.css?v=19')) {
-      ok('缓存破坏: index.html app.js?v=22 + style.css?v=19');
+    if (html.includes('app.js?v=23') && html.includes('style.css?v=19')) {
+      ok('缓存破坏: index.html app.js?v=23 + style.css?v=19');
     } else {
-      fail('缓存破坏', 'app.js?v=22 / style.css?v=19 未找到');
+      fail('缓存破坏', 'app.js?v=23 / style.css?v=19 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1308,11 +1308,27 @@ async function runTests() {
       fail('M28-1: moreMenu 移出控制栏', '菜单仍在 .main-controls 内');
     }
     
-    // M25-9: 缓存版本号递增（v2.21: style.css v19 / app.js v22）
-    if (m23Html.includes('app.js?v=22') && m23Html.includes('style.css?v=19')) {
-      ok('M25-9: 缓存破坏 v2.21 (app.js?v=22 + style.css?v=19)');
+    // M29-1: 点击非菜单区域关闭更多菜单（用户习惯"点外面关闭"）
+    // 根因: 此前只有点 backdrop/菜单项才关闭 → 点主内容区菜单不关、
+    //       backdrop（透明全屏 z-index:315）残留 → 后续按钮点击被拦截
+    //       → "横屏更多不可用"（截图: 控制栏可见但菜单没弹、无可见异常）。
+    // 修复: document click 监听，点 #moreMenu/#moreMenuBtn 之外任意处关闭；
+    //       orientationchange 时强制清理 backdrop。
+    if (m23AppJs.includes('M29') &&
+        m23AppJs.includes("e.target.closest('#moreMenu')") &&
+        m23AppJs.includes("closest('#moreMenuBtn')") &&
+        m23AppJs.includes('closeMoreMenu()') &&
+        m23AppJs.includes("window.addEventListener('orientationchange'")) {
+      ok('M29-1: 点击非菜单区域关闭菜单 + 旋转强制清理（防 backdrop 残留拦截）');
     } else {
-      fail('M25-9: 缓存版本', 'v22/v19 未找到');
+      fail('M29-1: 点外面关闭菜单', '未找到 M29 逻辑');
+    }
+    
+    // M25-9: 缓存版本号递增（v2.22: style.css v19 / app.js v23）
+    if (m23Html.includes('app.js?v=23') && m23Html.includes('style.css?v=19')) {
+      ok('M25-9: 缓存破坏 v2.22 (app.js?v=23 + style.css?v=19)');
+    } else {
+      fail('M25-9: 缓存版本', 'v23/v19 未找到');
     }
   }
 
