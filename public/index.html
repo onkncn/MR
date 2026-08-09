@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css?v=18">
+    <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -269,26 +269,6 @@
                         <circle cx="12" cy="19" r="1.5"></circle>
                     </svg>
                 </button>
-                <div id="moreMenu" class="more-menu">
-                    <button class="more-menu-item" data-target="toggleDenoiseBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line><line x1="2" y1="2" x2="22" y2="22" stroke-width="2.5"></line></svg>
-                        <span>AI降噪</span>
-                        <span class="more-menu-status" id="moreMenuDenoiseStatus">开</span>
-                    </button>
-                    <button class="more-menu-item" data-target="toggleCustomAudioBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
-                        <span>自定义音频</span>
-                    </button>
-                    <button class="more-menu-item" data-target="toggleTtsBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path d="M16 8.5a4 4 0 0 1 0 7"></path><line x1="3" y1="3" x2="21" y2="21" stroke-width="2.5"></line></svg>
-                        <span>聊天TTS</span>
-                        <span class="more-menu-status" id="moreMenuTtsStatus">开</span>
-                    </button>
-                    <button class="more-menu-item" data-target="toggleOrientationBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2" transform="rotate(0 12 12)"></rect><path d="M12 8v8M8 12h8"></path></svg>
-                        <span>横竖屏切换</span>
-                    </button>
-                </div>
                 <button id="toggleOrientationBtn" class="control-btn orientation-btn" title="横竖屏切换">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="4" y="2" width="16" height="20" rx="2" ry="2" transform="rotate(0 12 12)"></rect>
@@ -296,6 +276,29 @@
                     </svg>
                 </button>
             </div>
+        </div>
+        
+        <!-- M28: moreMenu 移出 .main-controls（避免 transform 祖先导致 fixed 定位错位，
+             横屏胶囊 translateX(-50%) 使菜单相对胶囊定位 → 可能偏出视口"不在画布里"） -->
+        <div id="moreMenu" class="more-menu">
+            <button class="more-menu-item" data-target="toggleDenoiseBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line><line x1="2" y1="2" x2="22" y2="22" stroke-width="2.5"></line></svg>
+                <span>AI降噪</span>
+                <span class="more-menu-status" id="moreMenuDenoiseStatus">开</span>
+            </button>
+            <button class="more-menu-item" data-target="toggleCustomAudioBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                <span>自定义音频</span>
+            </button>
+            <button class="more-menu-item" data-target="toggleTtsBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path d="M16 8.5a4 4 0 0 1 0 7"></path><line x1="3" y1="3" x2="21" y2="21" stroke-width="2.5"></line></svg>
+                <span>聊天TTS</span>
+                <span class="more-menu-status" id="moreMenuTtsStatus">开</span>
+            </button>
+            <button class="more-menu-item" data-target="toggleOrientationBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2" transform="rotate(0 12 12)"></rect><path d="M12 8v8M8 12h8"></path></svg>
+                <span>横竖屏切换</span>
+            </button>
         </div>
         
         <div class="resize-handle-v" id="chatResizeHandle"></div>
@@ -463,6 +466,6 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=22"></script>
 </body>
 </html>

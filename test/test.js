@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=21') && html.includes('style.css?v=18')) {
-      ok('缓存破坏: index.html app.js?v=21 + style.css?v=18');
+    if (html.includes('app.js?v=22') && html.includes('style.css?v=19')) {
+      ok('缓存破坏: index.html app.js?v=22 + style.css?v=19');
     } else {
-      fail('缓存破坏', 'app.js?v=21 / style.css?v=18 未找到');
+      fail('缓存破坏', 'app.js?v=22 / style.css?v=19 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1295,11 +1295,24 @@ async function runTests() {
       fail('M27-1: 横屏 auto-hidden 可点', '横屏块未显式 pointer-events:auto');
     }
     
-    // M25-9: 缓存版本号递增（v2.20: style.css v18 / app.js v21）
-    if (m23Html.includes('app.js?v=21') && m23Html.includes('style.css?v=18')) {
-      ok('M25-9: 缓存破坏 v2.20 (app.js?v=21 + style.css?v=18)');
+    // M28-1: moreMenu 移出 .main-controls（避免 transform 祖先导致 fixed 定位错位）
+    // 根因: .main-controls 有 translateX(-50%) transform → moreMenu position:fixed
+    //       相对胶囊定位（包含块）→ 横屏窄胶囊下菜单可能偏出视口"不在画布里"。
+    // 修复: moreMenu 移到 room 容器外（body 级）→ fixed 相对视口定位。
+    // 判断: 控制栏开标签 到 M28 注释之间的内容（控制栏内部）不应含 moreMenu。
+    const controlsToM28 = m23Html.split('<div class="main-controls">')[1]?.split('M28')[0] || '';
+    const menuInsideControls = controlsToM28.includes('id="moreMenu"');
+    if (!menuInsideControls && m23Html.includes('id="moreMenu"') && m23Html.includes('M28')) {
+      ok('M28-1: moreMenu 已移出 .main-controls（fixed 相对视口，不偏出画布）');
     } else {
-      fail('M25-9: 缓存版本', 'v21/v18 未找到');
+      fail('M28-1: moreMenu 移出控制栏', '菜单仍在 .main-controls 内');
+    }
+    
+    // M25-9: 缓存版本号递增（v2.21: style.css v19 / app.js v22）
+    if (m23Html.includes('app.js?v=22') && m23Html.includes('style.css?v=19')) {
+      ok('M25-9: 缓存破坏 v2.21 (app.js?v=22 + style.css?v=19)');
+    } else {
+      fail('M25-9: 缓存版本', 'v22/v19 未找到');
     }
   }
 
