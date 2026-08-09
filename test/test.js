@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=24') && html.includes('style.css?v=21')) {
-      ok('缓存破坏: index.html app.js?v=24 + style.css?v=21');
+    if (html.includes('app.js?v=24') && html.includes('style.css?v=22')) {
+      ok('缓存破坏: index.html app.js?v=24 + style.css?v=22');
     } else {
-      fail('缓存破坏', 'app.js?v=24 / style.css?v=21 未找到');
+      fail('缓存破坏', 'app.js?v=24 / style.css?v=22 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1352,25 +1352,39 @@ async function runTests() {
       fail('M32-1: 用户列表高度', '未找到 M32 高度规则');
     }
     
-    // M33-1: 侧边栏开关避开 iPhone 圆角（v2.26 — 用户反馈左上角圆边问题）
+    // M33-1: 侧边栏开关避开 iPhone 圆角（v2.26 引入，v2.27 修正为 12px）
     // 根因: 横屏块 .sidebar-toggle top:0 left:0 贴左上角 → 被 iPhone 屏幕圆角
-    //       （半径约47-55px）切掉；竖屏块 top:10 left:10 也被切。
-    // 修复: iOS @supports 块内 .sidebar-toggle top/left = max(20px, env(safe-area-inset-*))
-    //       → 刘海侧 env=44px 自动避开，圆角侧（env=0）20px 让按钮主体完整。
+    //       （半径约47-55px）切掉。
+    // 修复: iOS @supports + @media landscape 内 top/left = max(12px, env(safe-area-inset-*))
+    //       → 刘海侧 env=44px 自动避开，圆角侧（env=0）12px 兼顾避圆角+不靠右。
     if (m23Css.includes('M33') &&
-        m23Css.includes('max(20px, env(safe-area-inset-top))') &&
-        m23Css.includes('max(20px, env(safe-area-inset-left))') &&
+        m23Css.includes('max(12px, env(safe-area-inset-top))') &&
+        m23Css.includes('max(12px, env(safe-area-inset-left))') &&
         m23Css.includes('@supports (-webkit-touch-callout: none)')) {
-      ok('M33-1: 侧边栏开关避开 iPhone 圆角（env 安全区 + 20px 兜底）');
+      ok('M33-1: 侧边栏开关避开 iPhone 圆角（env 安全区 + 12px 兜底）');
     } else {
       fail('M33-1: 侧边栏圆角避开', '未找到 M33 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.26: style.css v21 / app.js v24）
-    if (m23Html.includes('app.js?v=24') && m23Html.includes('style.css?v=21')) {
-      ok('M25-9: 缓存破坏 v2.26 (app.js?v=24 + style.css?v=21)');
+    // M33-2: 侧边栏开关偏移修正（v2.27 — 用户反馈横屏太靠右）
+    // v2.26 的 M33 把竖屏也改成 20px + 横屏 20px 兜底 → 用户说
+    // '竖屏之前没问题，横屏现在也太靠右了'。
+    // 修正: M33 移入 @media landscape 内（竖屏恢复 top:10 left:10），
+    //       横屏兜底 20px→12px（圆角侧靠左，刘海侧 env 自动避让）。
+    if (m23Css.includes('M33') &&
+        m23Css.includes('max(12px, env(safe-area-inset-top))') &&
+        m23Css.includes('max(12px, env(safe-area-inset-left))') &&
+        m23Css.includes('top: 10px') && m23Css.includes('left: 10px')) {
+      ok('M33-2: 侧边栏开关修正（竖屏恢复 10px，横屏兜底 12px 不靠右）');
     } else {
-      fail('M25-9: 缓存版本', 'v24/v21 未找到');
+      fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
+    }
+    
+    // M25-9: 缓存版本号递增（v2.27: style.css v22 / app.js v24）
+    if (m23Html.includes('app.js?v=24') && m23Html.includes('style.css?v=22')) {
+      ok('M25-9: 缓存破坏 v2.27 (app.js?v=24 + style.css?v=22)');
+    } else {
+      fail('M25-9: 缓存版本', 'v24/v22 未找到');
     }
   }
 

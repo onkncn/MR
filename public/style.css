@@ -3631,15 +3631,15 @@ body {
         .header-drag-handle {
             display: none !important;
         }
-    }
-    
-    /* M33: 侧边栏开关避开 iPhone 圆角（v2.26）
-       横屏块 top:0 left:0 贴左上角 → 被屏幕圆角（半径约47-55px）切掉；
-       竖屏块 top:10 left:10 也被切。用 env 安全区 + 20px 兜底：
-       刘海侧 env=44px 自动避开，圆角侧（env=0）20px 让按钮主体完整。 */
-    .sidebar-toggle {
-        top: max(20px, env(safe-area-inset-top));
-        left: max(20px, env(safe-area-inset-left));
+        
+        /* M33: 侧边栏开关避开 iPhone 圆角（v2.27 修正）
+           只作用于横屏（竖屏恢复 top:10 left:10，用户反馈竖屏原本正常）。
+           横屏兜底 20px→12px：圆角侧（env=0）12px 兼顾避圆角+不靠右；
+           刘海侧（env=44px）自动避让。 */
+        .sidebar-toggle {
+            top: max(12px, env(safe-area-inset-top));
+            left: max(12px, env(safe-area-inset-left));
+        }
     }
 }
 
