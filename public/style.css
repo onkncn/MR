@@ -2039,11 +2039,12 @@ body {
 
 /* 在线用户列表 */
 .online-users-section {
-    flex: 1;
+    flex: 0 1 auto;        /* M32: 按内容高度自适应（用户少时完整显示，多时收缩滚动） */
     display: flex;
     flex-direction: column;
     border-bottom: 1px solid #202225;
     min-height: 0;
+    max-height: 45%;       /* 最多占聊天面板 45%，避免挤压聊天区 */
     overflow: hidden;
 }
 
@@ -2071,9 +2072,10 @@ body {
 }
 
 .online-users-list {
-    flex: 1;
+    flex: 0 1 auto;        /* M32: 内容高度，超出 max-height 滚动 */
     overflow-y: auto;
     padding: 4px 0;
+    max-height: 220px;     /* 用户多时上限，滚动查看 */
     min-height: 0;
 }
 
@@ -3592,9 +3594,9 @@ body {
         display: none;
     }
     
-    /* 在线用户列表：抽屉内紧凑 */
+    /* 在线用户列表：抽屉内紧凑（M32: 25%→40%，2 个用户完整显示不截断 IP） */
     .online-users-section {
-        max-height: 25%;
+        max-height: 40%;
     }
     
     .chat-messages {

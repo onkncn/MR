@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=24') && html.includes('style.css?v=19')) {
-      ok('缓存破坏: index.html app.js?v=24 + style.css?v=19');
+    if (html.includes('app.js?v=24') && html.includes('style.css?v=20')) {
+      ok('缓存破坏: index.html app.js?v=24 + style.css?v=20');
     } else {
-      fail('缓存破坏', 'app.js?v=24 / style.css?v=19 未找到');
+      fail('缓存破坏', 'app.js?v=24 / style.css?v=20 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1338,11 +1338,25 @@ async function runTests() {
       fail('M31-1: 菜单右缘对齐', '未找到 M31 动态定位逻辑');
     }
     
-    // M25-9: 缓存版本号递增（v2.24: style.css v19 / app.js v24）
-    if (m23Html.includes('app.js?v=24') && m23Html.includes('style.css?v=19')) {
-      ok('M25-9: 缓存破坏 v2.24 (app.js?v=24 + style.css?v=19)');
+    // M32-1: 在线用户列表高度自适应（v2.25 — 用户截图发现 IP 被截断）
+    // 根因: 横屏块 .online-users-section max-height:25% → 面板400px时仅100px，
+    //       header(33px)+list(77px) → 第二个用户的 IP 行超出被裁剪。
+    // 修复: 横屏块 25%→40%（section），list max-height:220px 滚动上限；
+    //       基础块 flex:0 1 auto（内容高度自适应）。
+    if (m23Css.includes('M32') &&
+        m23Css.includes('max-height: 40%') &&
+        m23Css.includes('max-height: 220px') &&
+        m23Css.includes('flex: 0 1 auto')) {
+      ok('M32-1: 在线用户列表高度自适应（40% + 220px 滚动上限，IP 不再截断）');
     } else {
-      fail('M25-9: 缓存版本', 'v24/v19 未找到');
+      fail('M32-1: 用户列表高度', '未找到 M32 高度规则');
+    }
+    
+    // M25-9: 缓存版本号递增（v2.25: style.css v20 / app.js v24）
+    if (m23Html.includes('app.js?v=24') && m23Html.includes('style.css?v=20')) {
+      ok('M25-9: 缓存破坏 v2.25 (app.js?v=24 + style.css?v=20)');
+    } else {
+      fail('M25-9: 缓存版本', 'v24/v20 未找到');
     }
   }
 
