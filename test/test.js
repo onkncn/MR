@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=18') && html.includes('style.css?v=14')) {
-      ok('缓存破坏: index.html app.js?v=18 + style.css?v=14');
+    if (html.includes('app.js?v=19') && html.includes('style.css?v=15')) {
+      ok('缓存破坏: index.html app.js?v=19 + style.css?v=15');
     } else {
-      fail('缓存破坏', 'app.js?v=18 / style.css?v=14 未找到');
+      fail('缓存破坏', 'app.js?v=19 / style.css?v=15 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1193,11 +1193,11 @@ async function runTests() {
   } catch (e) { fail('读取 index.html', e.message); }
 
   // ─────────────────────────────────────
-  // M23/M24 横屏按钮可用性（v2.16 排查"聊天/更多失效"）
+  // M23/M25 横屏按钮可用性（v2.17 排查"聊天/更多失效"）
   // 根因: auto-hidden 用 opacity:0 + 下沉 + pointer-events:none，
   //      移动端 touch 被拦截无法唤出 → 按钮"失效"。
   // 修复: 保留隐藏机制（沉浸式）+ document 级 touchstart 唤出
-  //      （不下沉、唤出后同一击 click 直接操作按钮）。
+  //      + M25 坐标命中检测（touch 按钮位置直接触发，同一击完成）。
   // ─────────────────────────────────────
   {
     const m23Css = fs.readFileSync(path.join(publicDir, 'style.css'), 'utf-8');
@@ -1205,64 +1205,72 @@ async function runTests() {
     const m23Html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
     const m23IndexHtml = m23Html;
     
-    // M24-1: document 级 touchstart 唤出机制存在（修复移动端无法唤出）
+    // M25-1: document 级 touchstart 唤出机制存在（修复移动端无法唤出）
     if (m23AppJs.includes("document.addEventListener('touchstart'") &&
-        m23AppJs.includes('M24 横屏移动端唤出机制')) {
-      ok('M24-1: document 级 touchstart 唤出机制存在（移动端可唤出）');
+        m23AppJs.includes('M24/M25 横屏移动端唤出机制')) {
+      ok('M25-1: document 级 touchstart 唤出机制存在（移动端可唤出）');
     } else {
-      fail('M24-1: document touchstart 唤出', '未找到 M24 唤出机制');
+      fail('M25-1: document touchstart 唤出', '未找到 M25 唤出机制');
     }
     
-    // M24-2: 唤出后同一击可操作（showControls 后 click 落按钮）
+    // M25-2: 坐标命中检测 — touch 位置在按钮 rect 内直接触发按钮（同一击完成）
+    if (m23AppJs.includes('getBoundingClientRect()') &&
+        m23AppJs.includes('hitBtn.click()')) {
+      ok('M25-2: 坐标命中检测存在（auto-hidden 下 touch 按钮位置直接触发）');
+    } else {
+      fail('M25-2: 坐标命中检测', '未找到 hitBtn 命中逻辑');
+    }
+    
+    // M25-3: 唤出后同一击可操作（showControls 后 click 落按钮）
     if (m23AppJs.includes('mainControls.classList.contains(\'auto-hidden\')') &&
         m23AppJs.includes('showControls();')) {
-      ok('M24-2: auto-hidden 检测 + showControls 唤出逻辑存在');
+      ok('M25-3: auto-hidden 检测 + showControls 唤出逻辑存在');
     } else {
-      fail('M24-2: 唤出逻辑', '未找到 showControls 唤出');
+      fail('M25-3: 唤出逻辑', '未找到 showControls 唤出');
     }
     
-    // M24-3: 横屏 auto-hidden 保留隐藏（opacity: 0）
+    // M25-4: 横屏 auto-hidden 保留隐藏（opacity: 0）
     if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?opacity:\s*0\s*;/)) {
-      ok('M24-3: 横屏 auto-hidden 保留隐藏（opacity:0 沉浸式）');
+      ok('M25-4: 横屏 auto-hidden 保留隐藏（opacity:0 沉浸式）');
     } else {
-      fail('M24-3: auto-hidden 保留隐藏', '未找到 opacity:0 规则');
+      fail('M25-4: auto-hidden 保留隐藏', '未找到 opacity:0 规则');
     }
     
-    // M24-4: 横屏 auto-hidden 不下沉（transform 仅居中，按钮原位可同击操作）
+    // M25-5: 横屏 auto-hidden 不下沉（transform 仅居中，按钮原位可同击操作）
     if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?transform:\s*translateX\(-50%\)\s*;/)) {
-      ok('M24-4: 横屏 auto-hidden 不下沉（transform 仅 translateX 居中）');
+      ok('M25-5: 横屏 auto-hidden 不下沉（transform 仅 translateX 居中）');
     } else {
-      fail('M24-4: auto-hidden 不下沉', '未找到不下沉 transform');
+      fail('M25-5: auto-hidden 不下沉', '未找到不下沉 transform');
     }
     
-    // M24-5: 音量滑块打开时不隐藏（active 加在 wrapper 上，选择器必须匹配）
+    // M25-6: 音量滑块打开时不隐藏（active 加在 wrapper 上，选择器必须匹配）
     if (m23AppJs.includes("mainControls.querySelector('.control-btn-wrapper.active')")) {
-      ok('M24-5: 音量滑块 active 检查用 .control-btn-wrapper.active（正确）');
+      ok('M25-6: 音量滑块 active 检查用 .control-btn-wrapper.active（正确）');
     } else {
-      fail('M24-5: 音量滑块检查', '选择器未匹配 wrapper.active');
+      fail('M25-6: 音量滑块检查', '选择器未匹配 wrapper.active');
     }
     
-    // M24-6: 更多菜单 4 项 data-target 都指向真实存在的按钮 id
+    // M25-7: 更多菜单 4 项 data-target 都指向真实存在的按钮 id
     const moreTargets = ['toggleDenoiseBtn', 'toggleCustomAudioBtn', 'toggleTtsBtn', 'toggleOrientationBtn'];
     const allTargetsExist = moreTargets.every(id => m23IndexHtml.includes(`id="${id}"`));
     if (m23IndexHtml.includes('class="more-menu"') && allTargetsExist) {
-      ok('M24-6: 更多菜单 4 项 data-target 指向真实按钮');
+      ok('M25-7: 更多菜单 4 项 data-target 指向真实按钮');
     } else {
-      fail('M24-6: 更多菜单目标', '菜单项目标 id 缺失');
+      fail('M25-7: 更多菜单目标', '菜单项目标 id 缺失');
     }
     
-    // M24-7: 聊天按钮 mobileChatBtn 与更多按钮 moreMenuBtn 存在（横屏胶囊核心按钮）
+    // M25-8: 聊天按钮 mobileChatBtn 与更多按钮 moreMenuBtn 存在（横屏胶囊核心按钮）
     if (m23IndexHtml.includes('id="mobileChatBtn"') && m23IndexHtml.includes('id="moreMenuBtn"')) {
-      ok('M24-7: 横屏核心按钮 mobileChatBtn/moreMenuBtn 存在');
+      ok('M25-8: 横屏核心按钮 mobileChatBtn/moreMenuBtn 存在');
     } else {
-      fail('M24-7: 核心按钮', 'mobileChatBtn/moreMenuBtn 缺失');
+      fail('M25-8: 核心按钮', 'mobileChatBtn/moreMenuBtn 缺失');
     }
     
-    // M24-8: 缓存版本号递增（v2.16: style.css v14 / app.js v18）
-    if (m23Html.includes('app.js?v=18') && m23Html.includes('style.css?v=14')) {
-      ok('M24-8: 缓存破坏 v2.16 (app.js?v=18 + style.css?v=14)');
+    // M25-9: 缓存版本号递增（v2.17: style.css v15 / app.js v19）
+    if (m23Html.includes('app.js?v=19') && m23Html.includes('style.css?v=15')) {
+      ok('M25-9: 缓存破坏 v2.17 (app.js?v=19 + style.css?v=15)');
     } else {
-      fail('M24-8: 缓存版本', 'v18/v14 未找到');
+      fail('M25-9: 缓存版本', 'v19/v15 未找到');
     }
   }
 

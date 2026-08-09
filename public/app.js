@@ -1011,12 +1011,14 @@ sidebarToggle.addEventListener('click', toggleSidebar);
         });
     }
     
-    // BUGFIX: M24 横屏移动端唤出机制（v2.16）
-    // 原方案: auto-hidden 时 pointer-events:none 拦截 touchstart，
-    //        mainContent 只监听 click 不监听 touchstart → 第一击无法唤出 → "按钮失效"。
-    // 修复: document 级 touchstart 唤出（不受控制栏 pointer-events:none 影响）。
-    //       用户 touch 屏幕任意位置（含按钮原位）→ showControls 立即恢复可点，
-    //       随后的 click 同一击直接落到按钮 → 唤出+操作一次完成。
+    // BUGFIX: M24/M25 横屏移动端唤出机制（v2.17）
+    // 原方案(v2.16): document touchstart 唤出后，随后的 click 落到按钮。
+    //   但 iOS 触摸序列中 click 的 target 在 touchstart 时经 hit-testing 锁定：
+    //   auto-hidden 时按钮 pointer-events:none → hit-test 目标是下层 main-content
+    //   → 唤出后 click 仍落不到按钮 → "更多按钮失效"。
+    // 修复: touchstart 时做坐标命中检测（不依赖 hit-testing）：
+    //   touch 位置在按钮 rect 内 → 直接 btn.click() 触发按钮逻辑（唤出+操作一次完成），
+    //   原生 click 派发到 main-content 只触发 showControls（已显示，无副作用）。
     document.addEventListener('touchstart', (e) => {
         // 仅横屏移动端生效
         if (!isLandscape() || window.innerWidth > 1024) return;
@@ -1027,6 +1029,18 @@ sidebarToggle.addEventListener('click', toggleSidebar);
         if (chatExpanded || sidebarOpen || menuOpen) return;
         // 控制栏可见时不处理（触摸按钮走正常流程）
         if (mainControls.classList.contains('auto-hidden')) {
+            // M25: 坐标命中检测 — touch 位置在哪个按钮上就触发哪个按钮
+            const touch = e.touches && e.touches[0];
+            if (touch) {
+                const hitBtn = Array.from(mainControls.querySelectorAll('button')).find((b) => {
+                    const r = b.getBoundingClientRect();
+                    return touch.clientX >= r.left && touch.clientX <= r.right &&
+                           touch.clientY >= r.top && touch.clientY <= r.bottom;
+                });
+                if (hitBtn) {
+                    hitBtn.click();
+                }
+            }
             showControls();
         }
     }, { passive: true });
