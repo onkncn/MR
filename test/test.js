@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=17') && html.includes('style.css?v=13')) {
-      ok('缓存破坏: index.html app.js?v=17 + style.css?v=13');
+    if (html.includes('app.js?v=18') && html.includes('style.css?v=14')) {
+      ok('缓存破坏: index.html app.js?v=18 + style.css?v=14');
     } else {
-      fail('缓存破坏', 'app.js?v=17 / style.css?v=13 未找到');
+      fail('缓存破坏', 'app.js?v=18 / style.css?v=14 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1103,13 +1103,13 @@ async function runTests() {
       fail('频道名隐藏样式', '未找到 .header-hidden');
     }
     
-    // M17/M23 横屏控制栏布局：v2.15 悬浮胶囊（fixed + 居中 + 半透明常驻可点）
-    if (styleCss.includes('BUGFIX: M17/M23 控制栏隐藏时保持胶囊位置可点') &&
+    // M17/M24 横屏控制栏布局：v2.16 悬浮胶囊（fixed + 居中 + 隐藏可唤出）
+    if (styleCss.includes('BUGFIX: M17/M23/M24 控制栏隐藏机制') &&
         styleCss.includes('.main-controls.auto-hidden') &&
         styleCss.includes('border-radius: 30px')) {
-      ok('M17/M23: 横屏控制栏悬浮胶囊 + 半透明常驻可点');
+      ok('M17/M24: 横屏控制栏悬浮胶囊 + 隐藏机制');
     } else {
-      fail('M17/M23: 横屏控制栏布局', '未找到悬浮胶囊 / 半透明可点修复');
+      fail('M17/M24: 横屏控制栏布局', '未找到悬浮胶囊 / 隐藏机制');
     }
     
     // 频道 header 过渡动画
@@ -1193,10 +1193,11 @@ async function runTests() {
   } catch (e) { fail('读取 index.html', e.message); }
 
   // ─────────────────────────────────────
-  // M23 横屏按钮可用性（v2.15 排查"聊天/更多失效"）
+  // M23/M24 横屏按钮可用性（v2.16 排查"聊天/更多失效"）
   // 根因: auto-hidden 用 opacity:0 + 下沉 + pointer-events:none，
   //      移动端 touch 被拦截无法唤出 → 按钮"失效"。
-  // 修复: auto-hidden 改为半透明常驻 + pointer-events:auto（按钮始终可点）。
+  // 修复: 保留隐藏机制（沉浸式）+ document 级 touchstart 唤出
+  //      （不下沉、唤出后同一击 click 直接操作按钮）。
   // ─────────────────────────────────────
   {
     const m23Css = fs.readFileSync(path.join(publicDir, 'style.css'), 'utf-8');
@@ -1204,55 +1205,64 @@ async function runTests() {
     const m23Html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
     const m23IndexHtml = m23Html;
     
-    // M23-1: 横屏 auto-hidden 不设 pointer-events:none（按钮保持可点）
-    if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?pointer-events:\s*auto/)) {
-      ok('M23-1: 横屏 auto-hidden 按钮 pointer-events:auto（可点，不失效）');
+    // M24-1: document 级 touchstart 唤出机制存在（修复移动端无法唤出）
+    if (m23AppJs.includes("document.addEventListener('touchstart'") &&
+        m23AppJs.includes('M24 横屏移动端唤出机制')) {
+      ok('M24-1: document 级 touchstart 唤出机制存在（移动端可唤出）');
     } else {
-      fail('M23-1: 横屏 auto-hidden 可点', '未找到 pointer-events:auto 规则');
+      fail('M24-1: document touchstart 唤出', '未找到 M24 唤出机制');
     }
     
-    // M23-2: 横屏 auto-hidden 不下沉出屏幕（transform 仅居中）
+    // M24-2: 唤出后同一击可操作（showControls 后 click 落按钮）
+    if (m23AppJs.includes('mainControls.classList.contains(\'auto-hidden\')') &&
+        m23AppJs.includes('showControls();')) {
+      ok('M24-2: auto-hidden 检测 + showControls 唤出逻辑存在');
+    } else {
+      fail('M24-2: 唤出逻辑', '未找到 showControls 唤出');
+    }
+    
+    // M24-3: 横屏 auto-hidden 保留隐藏（opacity: 0）
+    if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?opacity:\s*0\s*;/)) {
+      ok('M24-3: 横屏 auto-hidden 保留隐藏（opacity:0 沉浸式）');
+    } else {
+      fail('M24-3: auto-hidden 保留隐藏', '未找到 opacity:0 规则');
+    }
+    
+    // M24-4: 横屏 auto-hidden 不下沉（transform 仅居中，按钮原位可同击操作）
     if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?transform:\s*translateX\(-50%\)\s*;/)) {
-      ok('M23-2: 横屏 auto-hidden 不下沉（transform 仅 translateX 居中）');
+      ok('M24-4: 横屏 auto-hidden 不下沉（transform 仅 translateX 居中）');
     } else {
-      fail('M23-2: auto-hidden 不下沉', '未找到不下沉 transform');
+      fail('M24-4: auto-hidden 不下沉', '未找到不下沉 transform');
     }
     
-    // M23-3: 横屏 auto-hidden 半透明而非完全隐藏（opacity 0 < x < 1）
-    if (m23Css.match(/@media[^{]*max-width:\s*1024px[^{]*landscape[^{]*{[\s\S]*?\.main-controls\.auto-hidden\s*{[\s\S]*?opacity:\s*0\.\d+/)) {
-      ok('M23-3: 横屏 auto-hidden 半透明（0<opacity<1，降低干扰但可见）');
-    } else {
-      fail('M23-3: auto-hidden 半透明', '未找到半透明 opacity');
-    }
-    
-    // M23-4: 音量滑块打开时不隐藏（active 加在 wrapper 上，选择器必须匹配）
+    // M24-5: 音量滑块打开时不隐藏（active 加在 wrapper 上，选择器必须匹配）
     if (m23AppJs.includes("mainControls.querySelector('.control-btn-wrapper.active')")) {
-      ok('M23-4: 音量滑块 active 检查用 .control-btn-wrapper.active（正确）');
+      ok('M24-5: 音量滑块 active 检查用 .control-btn-wrapper.active（正确）');
     } else {
-      fail('M23-4: 音量滑块检查', '选择器未匹配 wrapper.active');
+      fail('M24-5: 音量滑块检查', '选择器未匹配 wrapper.active');
     }
     
-    // M23-5: 更多菜单 4 项 data-target 都指向真实存在的按钮 id
+    // M24-6: 更多菜单 4 项 data-target 都指向真实存在的按钮 id
     const moreTargets = ['toggleDenoiseBtn', 'toggleCustomAudioBtn', 'toggleTtsBtn', 'toggleOrientationBtn'];
     const allTargetsExist = moreTargets.every(id => m23IndexHtml.includes(`id="${id}"`));
     if (m23IndexHtml.includes('class="more-menu"') && allTargetsExist) {
-      ok('M23-5: 更多菜单 4 项 data-target 指向真实按钮');
+      ok('M24-6: 更多菜单 4 项 data-target 指向真实按钮');
     } else {
-      fail('M23-5: 更多菜单目标', '菜单项目标 id 缺失');
+      fail('M24-6: 更多菜单目标', '菜单项目标 id 缺失');
     }
     
-    // M23-6: 聊天按钮 mobileChatBtn 与更多按钮 moreMenuBtn 存在（横屏胶囊核心按钮）
+    // M24-7: 聊天按钮 mobileChatBtn 与更多按钮 moreMenuBtn 存在（横屏胶囊核心按钮）
     if (m23IndexHtml.includes('id="mobileChatBtn"') && m23IndexHtml.includes('id="moreMenuBtn"')) {
-      ok('M23-6: 横屏核心按钮 mobileChatBtn/moreMenuBtn 存在');
+      ok('M24-7: 横屏核心按钮 mobileChatBtn/moreMenuBtn 存在');
     } else {
-      fail('M23-6: 核心按钮', 'mobileChatBtn/moreMenuBtn 缺失');
+      fail('M24-7: 核心按钮', 'mobileChatBtn/moreMenuBtn 缺失');
     }
     
-    // M23-7: 缓存版本号递增（v2.15: style.css v13 / app.js v17）
-    if (m23Html.includes('app.js?v=17') && m23Html.includes('style.css?v=13')) {
-      ok('M23-7: 缓存破坏 v2.15 (app.js?v=17 + style.css?v=13)');
+    // M24-8: 缓存版本号递增（v2.16: style.css v14 / app.js v18）
+    if (m23Html.includes('app.js?v=18') && m23Html.includes('style.css?v=14')) {
+      ok('M24-8: 缓存破坏 v2.16 (app.js?v=18 + style.css?v=14)');
     } else {
-      fail('M23-7: 缓存版本', 'v17/v13 未找到');
+      fail('M24-8: 缓存版本', 'v18/v14 未找到');
     }
   }
 

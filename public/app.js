@@ -1011,6 +1011,26 @@ sidebarToggle.addEventListener('click', toggleSidebar);
         });
     }
     
+    // BUGFIX: M24 横屏移动端唤出机制（v2.16）
+    // 原方案: auto-hidden 时 pointer-events:none 拦截 touchstart，
+    //        mainContent 只监听 click 不监听 touchstart → 第一击无法唤出 → "按钮失效"。
+    // 修复: document 级 touchstart 唤出（不受控制栏 pointer-events:none 影响）。
+    //       用户 touch 屏幕任意位置（含按钮原位）→ showControls 立即恢复可点，
+    //       随后的 click 同一击直接落到按钮 → 唤出+操作一次完成。
+    document.addEventListener('touchstart', (e) => {
+        // 仅横屏移动端生效
+        if (!isLandscape() || window.innerWidth > 1024) return;
+        // 抽屉/菜单打开时不隐藏也不唤出（避免打断）
+        const chatExpanded = document.getElementById('chatPanel')?.classList.contains('mobile-expanded');
+        const sidebarOpen = document.querySelector('.sidebar-left')?.classList.contains('open');
+        const menuOpen = mainControls.classList.contains('menu-open');
+        if (chatExpanded || sidebarOpen || menuOpen) return;
+        // 控制栏可见时不处理（触摸按钮走正常流程）
+        if (mainControls.classList.contains('auto-hidden')) {
+            showControls();
+        }
+    }, { passive: true });
+    
     // 控制栏自身触摸/鼠标交互
     mainControls.addEventListener('touchstart', showControls, { passive: true });
     mainControls.addEventListener('mouseenter', showControls);

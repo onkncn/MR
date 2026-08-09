@@ -3428,18 +3428,19 @@ body {
         display: none;
     }
     
-    /* BUGFIX: M17/M23 控制栏隐藏时保持胶囊位置可点（v2.15）
-       — 原方案 opacity:0 + 下沉 + pointer-events:none 导致移动端无法唤出按钮
-       （touch 被拦截、click 第一击只唤出不操作），用户反馈"聊天/更多按钮失效"。
-       改为半透明常驻：按钮始终可点，无操作时淡到 20% 降低干扰，点任意按钮恢复。 */
+    /* BUGFIX: M17/M23/M24 控制栏隐藏机制（v2.16）
+       — 保留隐藏（沉浸式观看/共享）：无操作 3s 淡出 opacity:0。
+       — 保留位置（不下沉）：按钮仍在原位，document 级 touchstart 唤出后
+         同一击的 click 直接落到按钮 → 唤出+操作一次完成，无需点两次。
+       — pointer-events:none 仅隐藏时拦截，唤出后自动恢复 auto。 */
     .main-controls.auto-hidden {
         height: auto;
         padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
         border-top: none;
         overflow: hidden;
         transform: translateX(-50%);
-        opacity: 0.2;
-        pointer-events: auto;
+        opacity: 0;
+        pointer-events: none;
         transition: opacity 0.3s ease;
     }
     
