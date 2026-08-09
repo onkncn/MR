@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=9') && html.includes('style.css?v=4')) {
-      ok('缓存破坏: index.html app.js?v=9 + style.css?v=4');
+    if (html.includes('app.js?v=11') && html.includes('style.css?v=5')) {
+      ok('缓存破坏: index.html app.js?v=11 + style.css?v=5');
     } else {
-      fail('缓存破坏', 'app.js?v=9 / style.css?v=4 未找到');
+      fail('缓存破坏', 'app.js?v=11 / style.css?v=5 未找到');
     }
     
     // M16 移动端控制栏自动隐藏：断点与 CSS 横屏 932px 对齐

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -257,6 +257,11 @@
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                 </button>
+                <button id="mobileChatBtn" class="control-btn mobile-chat-btn" title="聊天">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </button>
                 <button id="toggleOrientationBtn" class="control-btn orientation-btn" title="横竖屏切换">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="4" y="2" width="16" height="20" rx="2" ry="2" transform="rotate(0 12 12)"></rect>
@@ -269,8 +274,10 @@
         <div class="resize-handle-v" id="chatResizeHandle"></div>
         
         <div class="chat-panel" id="chatPanel">
+            <div class="chat-sheet-handle" id="chatSheetHandle"><div class="chat-sheet-handle-bar"></div></div>
             <div class="chat-header">
                 <span class="chat-title">聊天</span>
+                <span class="chat-sheet-hint" id="chatSheetHint">上滑查看更多</span>
                 <button id="chatCollapseBtn" class="chat-toggle-btn hidden" title="返回">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="15 18 9 12 15 6"></polyline>
@@ -429,6 +436,6 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=11"></script>
 </body>
 </html>

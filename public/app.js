@@ -512,6 +512,119 @@ chatCollapseBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     room.classList.remove('chat-only');
     toggleChatExpandBtn.classList.remove('active');
+    // 移动端 bottom sheet：点击返回按钮收起聊天面板
+    if (chatPanel.classList.contains('mobile-expanded')) {
+        collapseMobileChat();
+    }
+});
+
+// ====== 移动端聊天 bottom sheet ======
+// 竖屏：聊天面板默认收起（底部露出手柄条），点击展开/收起
+// 横屏：聊天面板为侧栏，此逻辑不生效
+const mobileChatBtn = document.getElementById('mobileChatBtn');
+const chatSheetHandle = document.getElementById('chatSheetHandle');
+const chatSheetHint = document.getElementById('chatSheetHint');
+
+function isPortraitMobile() {
+    return window.innerWidth <= 768 
+        && !window.matchMedia('(orientation: landscape)').matches;
+}
+
+function isMobileChatSheetActive() {
+    // 仅竖屏移动端启用 bottom sheet（横屏用侧栏布局）
+    return isPortraitMobile() && !room.classList.contains('chat-only');
+}
+
+function expandMobileChat() {
+    if (!isMobileChatSheetActive()) return;
+    chatPanel.classList.add('mobile-expanded');
+    if (chatSheetHint) chatSheetHint.textContent = '下滑或点此收起';
+    // 展开后聚焦输入框（延迟等待动画）
+    setTimeout(() => {
+        const input = document.getElementById('chatInput');
+        if (input && !isIOS()) input.focus();
+    }, 350);
+    // 滚动到最新消息
+    setTimeout(() => {
+        const messages = document.getElementById('chatMessages');
+        if (messages) messages.scrollTop = messages.scrollHeight;
+    }, 400);
+}
+
+function collapseMobileChat() {
+    if (!chatPanel.classList.contains('mobile-expanded')) return;
+    chatPanel.classList.remove('mobile-expanded');
+    if (chatSheetHint) chatSheetHint.textContent = '上滑查看更多';
+}
+
+// 控制栏聊天按钮：展开聊天面板
+if (mobileChatBtn) {
+    mobileChatBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!currentChannel) {
+            alert('请先加入频道');
+            return;
+        }
+        if (chatPanel.classList.contains('mobile-expanded')) {
+            collapseMobileChat();
+        } else {
+            expandMobileChat();
+        }
+    });
+}
+
+// 手柄：点击展开/收起
+if (chatSheetHandle) {
+    chatSheetHandle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (chatPanel.classList.contains('mobile-expanded')) {
+            collapseMobileChat();
+        } else {
+            expandMobileChat();
+        }
+    });
+
+    // 手柄拖拽展开/收起
+    let sheetStartY = 0;
+    let sheetDragging = false;
+    chatSheetHandle.addEventListener('touchstart', (e) => {
+        sheetStartY = e.touches[0].clientY;
+        sheetDragging = true;
+        chatPanel.style.transition = 'none';
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+        if (!sheetDragging) return;
+        const deltaY = e.touches[0].clientY - sheetStartY;
+        // 下拉超过 60px 则收起
+        if (deltaY > 60 && chatPanel.classList.contains('mobile-expanded')) {
+            collapseMobileChat();
+            sheetDragging = false;
+        }
+    }, { passive: true });
+    document.addEventListener('touchend', () => {
+        if (sheetDragging) {
+            sheetDragging = false;
+            chatPanel.style.transition = '';
+        }
+    }, { passive: true });
+}
+
+// 点击聊天面板 header 也可展开（收起时）
+document.querySelector('.chat-header')?.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    if (!chatPanel.classList.contains('mobile-expanded') && isMobileChatSheetActive()) {
+        expandMobileChat();
+    }
+});
+
+// 横竖屏切换 / 窗口 resize 时重置聊天面板状态
+const originalResizeHandler = window.onresize;
+window.addEventListener('resize', () => {
+    if (!isPortraitMobile()) {
+        // 横屏或桌面：移除移动端展开态
+        chatPanel.classList.remove('mobile-expanded');
+        if (chatSheetHint) chatSheetHint.textContent = '上滑查看更多';
+    }
 });
 addChannelBtn.addEventListener('click', () => openModal(createModal));
 placeholderCreateBtn.addEventListener('click', () => openModal(createModal));
@@ -3134,6 +3247,23 @@ async function startScreenShare() {
             }
         }
         
+        // BUGFIX: M18 共享范围提示 — 引导用户选择"标签页"而非"窗口/整个屏幕"
+        // 避免浏览器外壳（地址栏/书签栏/其他标签）被共享出去，暴露隐私且观感差
+        if (!iOS) {
+            const tip = confirm(
+                '🖥️ 选择共享范围\n\n' +
+                '💡 最佳体验：在系统弹窗中选择「此标签页」\n' +
+                '→ 只共享本应用页面，不含地址栏/书签栏\n\n' +
+                '⚠️ 若选择「窗口」或「整个屏幕」：\n' +
+                '→ 浏览器外壳、其他标签页、任务栏都会暴露\n' +
+                '→ 观看者会看到与截图示例相同的"整窗口"画面\n\n' +
+                '是否继续共享？'
+            );
+            if (!tip) {
+                return;
+            }
+        }
+        
         let constraints = {
             video: true,
             audio: true  // 请求屏幕音频（需要选择"标签页"共享才能捕获声音）
@@ -3142,6 +3272,7 @@ async function startScreenShare() {
         if (!iOS) {
             constraints.video = {
                 cursor: 'always',
+                displaySurface: 'browser',  // 优先"标签页"共享，避免整个浏览器窗口/屏幕
                 width: { ideal: 1920 },
                 height: { ideal: 1080 },
                 frameRate: { ideal: 60, max: 60 }
