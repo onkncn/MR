@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=25') && html.includes('style.css?v=22')) {
-      ok('缓存破坏: index.html app.js?v=25 + style.css?v=22');
+    if (html.includes('app.js?v=26') && html.includes('style.css?v=24')) {
+      ok('缓存破坏: index.html app.js?v=26 + style.css?v=24');
     } else {
-      fail('缓存破坏', 'app.js?v=25 / style.css?v=22 未找到');
+      fail('缓存破坏', 'app.js?v=26 / style.css?v=24 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.28: style.css v22 / app.js v25）
-    if (m23Html.includes('app.js?v=25') && m23Html.includes('style.css?v=22')) {
-      ok('M25-9: 缓存破坏 v2.28 (app.js?v=25 + style.css?v=22)');
+    // M25-9: 缓存版本号递增（v2.30: style.css v24 / app.js v26）
+    if (m23Html.includes('app.js?v=26') && m23Html.includes('style.css?v=24')) {
+      ok('M25-9: 缓存破坏 v2.30 (app.js?v=26 + style.css?v=24)');
     } else {
-      fail('M25-9: 缓存版本', 'v25/v22 未找到');
+      fail('M25-9: 缓存版本', 'v26/v24 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1400,6 +1400,63 @@ async function runTests() {
       ok('M34-1: 横竖屏切换修复（iOS 引导手动旋转 + 桌面 Chrome 先全屏再锁定）');
     } else {
       fail('M34-1: 横竖屏切换修复', '未找到 M34 逻辑');
+    }
+    
+    // M35-1: 更多菜单状态显示反了修复（v2.29）
+    // 根因: updateMoreMenuStatus 用 `!classList.contains('active')` 计算开关，
+    //       但 active 类表示"开启"（enabled → add active），导致开启时菜单显示"关"。
+    // 修复: 去掉 ! 反转 → active 时显示"开"。
+    if (m23AppJs.includes('M35') &&
+        !m23AppJs.includes('const on = !denoiseBtn.classList.contains') &&
+        m23AppJs.includes('const on = denoiseBtn.classList.contains') &&
+        !m23AppJs.includes('const on = !ttsBtn.classList.contains') &&
+        m23AppJs.includes('const on = ttsBtn.classList.contains')) {
+      ok('M35-1: 更多菜单状态显示修复（active=开启，去掉反转）');
+    } else {
+      fail('M35-1: 菜单状态显示', '未找到 M35 修复逻辑');
+    }
+    
+    // M35-2: 登录框 Enter 键支持（v2.29）
+    // 根因: userNameInput 无 keydown handler → 移动端虚拟键盘"前往"无法登录。
+    // 修复: keydown Enter → login()。
+    if (m23AppJs.includes('M35') &&
+        m23AppJs.includes('userNameInput.addEventListener') &&
+        m23AppJs.includes("e.key === 'Enter'") &&
+        m23AppJs.includes('login()')) {
+      ok('M35-2: 登录框 Enter 键支持（移动端键盘可直接登录）');
+    } else {
+      fail('M35-2: 登录 Enter 键', '未找到 M35-2 逻辑');
+    }
+    
+    // M35-3: 竖屏音量滑块可用修复（v2.29）
+    // 根因: 1) CSS 竖屏块强制隐藏 .volume-control → 竖屏无法调节音量;
+    //       2) setupVolumeSlider touchstart → onStart → preventDefault 阻止按钮 click;
+    //       3) 移动端无唤出滑块入口（桌面 mouseenter 不触发）。
+    // 修复: CSS 删除隐藏覆盖; touchstart 点按钮不 preventDefault; 移动端 touchstart 唤出。
+    if (m23Css.includes('M35') &&
+        !m23Css.includes('.control-btn-wrapper.active .volume-control {\n        display: none !important') &&
+        m23AppJs.includes('closest(\'.control-btn\')') &&
+        m23AppJs.includes('wrapper.addEventListener(\'touchstart\', showSlider')) {
+      ok('M35-3: 竖屏音量滑块可用（CSS 恢复 + 按钮不拦截 click + 触摸唤出）');
+    } else {
+      fail('M35-3: 竖屏音量滑块', '未找到 M35-3 逻辑');
+    }
+    
+    // M36-1: iPhone 灵动岛横屏适配（v2.30）
+    // 根因: 灵动岛横屏时旋转到屏幕左侧/右侧（垂直条状），env(safe-area-inset-left/right)
+    //       返回约 59px；贴左/贴右边缘的 UI（抽屉/胶囊/共享按钮）会被灵动岛盖住。
+    // 修复: iOS @supports + 横屏块内对 sidebar-left/chat-panel/main-controls/
+    //       participants-container/screen-share-* 加 env(safe-area-inset) 避让。
+    if (m23Css.includes('M36') &&
+        m23Css.includes('safe-area-inset-left') &&
+        m23Css.includes('safe-area-inset-right') &&
+        m23Css.includes('.sidebar-left') &&
+        m23Css.includes('.main-controls') &&
+        m23Css.includes('.screen-share-wrapper') &&
+        m23Css.includes('.screen-stop-view-btn')) {
+      ok('M36-1: iPhone 灵动岛横屏适配（抽屉/胶囊/共享按钮避让侧边安全区）');
+    } else {
+      fail('M36-1: 灵动岛适配', '未找到 M36 安全区规则');
     }
   }
 

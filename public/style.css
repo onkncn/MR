@@ -2944,10 +2944,9 @@ body {
         flex-shrink: 0;
     }
     
-    .volume-control,
-    .control-btn-wrapper.active .volume-control {
-        display: none !important;
-    }
+    /* BUGFIX: M35 竖屏音量滑块不可用（v2.29）— 原规则把 .volume-control 及其 active 态
+       都强制 display:none，导致竖屏移动端麦克风/扬声器音量完全无法调节。
+       删除覆盖后，基础规则生效：默认隐藏，.control-btn-wrapper.active 时显示。 */
     
     .denoise-btn {
         width: auto !important;
@@ -3639,6 +3638,76 @@ body {
         .sidebar-toggle {
             top: max(12px, env(safe-area-inset-top));
             left: max(12px, env(safe-area-inset-left));
+        }
+        
+        /* ===== M36: iPhone 灵动岛横屏适配（v2.30）
+           灵动岛横屏时旋转到屏幕左侧/右侧（垂直条状），env(safe-area-inset-left/right)
+           返回约 59px。所有贴左/贴右边缘的 UI 元素需避让，否则内容被灵动岛盖住。
+           env() 在非灵动岛机型返回 0（或刘海屏返回 44px），规则自动降级。 ===== */
+        
+        /* 左抽屉：打开时内容避开左侧灵动岛 */
+        .sidebar-left {
+            padding-left: env(safe-area-inset-left, 0px);
+        }
+        
+        /* 右抽屉：聊天内容避开右侧灵动岛 */
+        .chat-panel {
+            padding-right: env(safe-area-inset-right, 0px);
+        }
+        
+        /* 底部悬浮胶囊：收窄避开两侧灵动岛（居中后边缘不再被盖住） */
+        .main-controls {
+            max-width: calc(92vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+        }
+        
+        /* 参与者横滑条：左右各让出灵动岛宽度 */
+        .participants-container {
+            left: env(safe-area-inset-left, 0px);
+            right: env(safe-area-inset-right, 0px);
+        }
+        
+        /* 全屏屏幕共享：视频避让侧边灵动岛（保留居中 contain 不裁切） */
+        .screen-share-wrapper {
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+        }
+        
+        /* 屏幕共享顶部按钮组（停止观看/缩小/横竖屏/全屏）：
+           右侧按钮右缘避让灵动岛 */
+        .screen-stop-view-btn {
+            right: max(12px, env(safe-area-inset-right, 0px));
+        }
+        .screen-minimize-btn {
+            right: max(64px, calc(env(safe-area-inset-right, 0px) + 52px));
+        }
+        .screen-orientation-btn {
+            right: max(116px, calc(env(safe-area-inset-right, 0px) + 104px));
+        }
+        .screen-fullscreen-btn {
+            right: max(168px, calc(env(safe-area-inset-right, 0px) + 156px));
+        }
+        
+        /* 屏幕共享标签：左上角，避让左侧灵动岛 */
+        .screen-share-label {
+            left: max(12px, env(safe-area-inset-left, 0px));
+            max-width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 24px);
+        }
+        
+        /* 暂停预览按钮：右侧避让灵动岛 */
+        .self-screen-preview-pause {
+            right: max(68px, calc(env(safe-area-inset-right, 0px) + 56px));
+        }
+        
+        /* 屏幕共享底部切换条：左右避让灵动岛 */
+        .screen-share-bar {
+            padding-left: max(12px, env(safe-area-inset-left, 0px));
+            padding-right: max(12px, env(safe-area-inset-right, 0px));
+        }
+        
+        /* 恢复观看条（停止观看后）：左右避让灵动岛 */
+        .screen-resume-bar {
+            margin-left: env(safe-area-inset-left, 0px);
+            margin-right: env(safe-area-inset-right, 0px);
         }
     }
 }

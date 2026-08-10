@@ -498,6 +498,14 @@ function syncHeaderHiddenState() {
 }
 
 loginBtn.addEventListener('click', login);
+// BUGFIX: M35 登录框支持 Enter 键（v2.29）— 移动端虚拟键盘"前往/Go"应能直接登录，
+// 否则用户按回车无反应，必须点「进入」按钮（E8 模式）。
+userNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        login();
+    }
+});
 logoutBtn.addEventListener('click', logout);
 mobileLogoutBtn.addEventListener('click', logout);
 sidebarOverlay.addEventListener('click', closeSidebar);
@@ -732,18 +740,21 @@ document.querySelector('.chat-header')?.addEventListener('click', (e) => {
     });
     
     // 同步菜单状态标记（降噪/TTS 开关状态）
+    // BUGFIX: M35 状态显示反了（v2.29）— 原逻辑 `!classList.contains('active')` 反转了状态：
+    //   active 类恰恰表示"开启"（updateDenoiseButton/updateTtsButton 里 enabled → add active），
+    //   导致降噪/TTS 开启时菜单却显示"关"。去掉 ! 反转。
     function updateMoreMenuStatus() {
         const denoiseBtn = document.getElementById('toggleDenoiseBtn');
         const denoiseStatus = document.getElementById('moreMenuDenoiseStatus');
         if (denoiseBtn && denoiseStatus) {
-            const on = !denoiseBtn.classList.contains('active');
+            const on = denoiseBtn.classList.contains('active');
             denoiseStatus.textContent = on ? '开' : '关';
             denoiseStatus.classList.toggle('off', !on);
         }
         const ttsBtn = document.getElementById('toggleTtsBtn');
         const ttsStatus = document.getElementById('moreMenuTtsStatus');
         if (ttsBtn && ttsStatus) {
-            const on = !ttsBtn.classList.contains('active');
+            const on = ttsBtn.classList.contains('active');
             ttsStatus.textContent = on ? '开' : '关';
             ttsStatus.classList.toggle('off', !on);
         }
@@ -891,7 +902,15 @@ function setupVolumeSlider(rangeInput, onUpdate) {
 
     // 鼠标/触摸事件绑定到 wrapper（覆盖整个可交互区域）
     wrapper.addEventListener('mousedown', onStart);
-    wrapper.addEventListener('touchstart', onStart, { passive: false });
+    wrapper.addEventListener('touchstart', (e) => {
+        // BUGFIX: M35 移动端点按钮唤出滑块时不应立即拖拽（v2.29）
+        // 原逻辑 touchstart → onStart → preventDefault：会阻止合成 click，
+        // 导致移动端麦克风/扬声器按钮 toggle 失效，且把音量误设为按钮位置的值。
+        // 现在：点按钮本身（.control-btn）→ 不 preventDefault、不拖拽，
+        // 由下方 showSlider 唤出逻辑负责显示滑块；触摸滑块区域才进入拖拽。
+        if (e.target.closest('.control-btn')) return;
+        onStart(e);
+    }, { passive: false });
 
     // 初始化显示
     updateVisual(parseInt(rangeInput.value));
@@ -948,10 +967,16 @@ document.querySelectorAll('.control-btn-wrapper').forEach(wrapper => {
         }, 300);
     }
     
-    // 仅桌面端启用 hover 显示音量条，移动端不需要
+    // 仅桌面端启用 hover 显示音量条；移动端用 touchstart 唤出（BUGFIX: M35 v2.29）
     if (!('ontouchstart' in window)) {
         wrapper.addEventListener('mouseenter', showSlider);
         wrapper.addEventListener('mouseleave', hideSlider);
+    } else {
+        // BUGFIX: M35 移动端点按钮唤出音量滑块（v2.29）
+        // 原逻辑移动端没有任何唤出入口 → 竖屏音量滑块完全不可用。
+        // 现在 touchstart 唤出滑块（不 preventDefault，按钮 click 照常 toggle），
+        // 点外部自动隐藏由下方 document click 处理。
+        wrapper.addEventListener('touchstart', showSlider, { passive: true });
     }
     
     wrapper.addEventListener('click', (e) => {
