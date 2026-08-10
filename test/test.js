@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=27') && html.includes('style.css?v=26')) {
-      ok('缓存破坏: index.html app.js?v=27 + style.css?v=26');
+    if (html.includes('app.js?v=28') && html.includes('style.css?v=26')) {
+      ok('缓存破坏: index.html app.js?v=28 + style.css?v=26');
     } else {
-      fail('缓存破坏', 'app.js?v=27 / style.css?v=26 未找到');
+      fail('缓存破坏', 'app.js?v=28 / style.css?v=26 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.33: style.css v26 / app.js v27）
-    if (m23Html.includes('app.js?v=27') && m23Html.includes('style.css?v=26')) {
-      ok('M25-9: 缓存破坏 v2.33 (app.js?v=27 + style.css?v=26)');
+    // M25-9: 缓存版本号递增（v2.34: style.css v26 / app.js v28）
+    if (m23Html.includes('app.js?v=28') && m23Html.includes('style.css?v=26')) {
+      ok('M25-9: 缓存破坏 v2.34 (app.js?v=28 + style.css?v=26)');
     } else {
-      fail('M25-9: 缓存版本', 'v27/v26 未找到');
+      fail('M25-9: 缓存版本', 'v28/v26 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1462,22 +1462,29 @@ async function runTests() {
       fail('M36-1: 灵动岛适配', '未找到 v2.32 精修规则');
     }
     
-    // M37-1: 横屏聊天抽屉拉出后无法再打开修复（v2.33）
-    // 根因: initPanelSwipeResize 守卫只在初始化时判断一次 —
+    // M37/M38: 横屏聊天抽屉拉动与重开（v2.34）
+    // M37 根因: initPanelSwipeResize 守卫只在初始化时判断一次 —
     //       竖屏打开页面时 isLandscape()=false 不 return，事件照常绑定；
     //       旋转横屏进入抽屉模式后 swipe 仍活跃 → 聊天面板往右拉被缩到
     //       0 宽 + hidden class；expandMobileChat 不清 hidden/inline style
     //       → 聊天再也打不开（CSS hidden transform 盖过 mobile-expanded）。
-    // 修复: 1) swipe touchstart 运行时检查 isDrawerMode（旋转后禁用）；
+    // M37 修复: 1) swipe touchstart 运行时检查 isDrawerMode（旋转后禁用）；
     //       2) expandMobileChat 清理 hidden class + 内联 width/opacity/overflow/transform。
+    // M38 精修（用户反馈 v2.33 禁得太彻底，要求保留拉动能力）:
+    //       1) 移除初始化整体 return — 横屏直接加载也可绑定 swipe；
+    //       2) 抽屉模式下聊天面板恢复拉动，但宽度下限 150px
+    //          （DRAWER_CHAT_MIN_WIDTH）→ 拉不到 <80，永不触发 hidden；
+    //       3) touchend 抽屉模式防御性不隐藏；侧边栏仍由 isDrawerMode 禁用。
     if (m23AppJs.includes('M37') &&
         m23AppJs.includes('const isDrawerMode = () => window.innerWidth <= 1024 && isLandscape()') &&
-        m23AppJs.includes('if (isDrawerMode()) return') &&
+        m23AppJs.includes('DRAWER_CHAT_MIN_WIDTH') &&
         m23AppJs.includes("chatPanel.classList.remove('hidden')") &&
-        m23AppJs.includes("chatPanel.style.width = ''")) {
-      ok('M37-1: 横屏聊天抽屉可重开（swipe 运行时禁用 + expand 清理残留）');
+        m23AppJs.includes("chatPanel.style.width = ''") &&
+        // M38: 抽屉模式聊天 touchstart 不再 return（允许拉动）
+        !m23AppJs.includes('// M37: 运行时检查抽屉模式（旋转后进入抽屉模式时禁用 swipe）\n        if (isDrawerMode()) return;\n        if (chatPanel.offsetWidth === 0)')) {
+      ok('M37-1: 横屏聊天抽屉可拉动且可重开（M38 精修：150px 下限 + expand 清理）');
     } else {
-      fail('M37-1: 聊天抽屉重开', '未找到 M37 修复逻辑');
+      fail('M37-1: 聊天抽屉拉动', '未找到 M38 修复逻辑');
     }
   }
 

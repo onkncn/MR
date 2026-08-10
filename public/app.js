@@ -1743,9 +1743,18 @@ function initPanelSwipeResize() {
     // + hidden class，且 expandMobileChat 不清 hidden → 聊天再也打不开。
     // 改为运行时检查：isDrawerMode 时 swipe 完全失效。
     const isDrawerMode = () => window.innerWidth <= 1024 && isLandscape();
+    // M38: 抽屉模式下聊天面板允许拉动调整宽度，但限制最小宽度（v2.34）
+    // 用户反馈 v2.33 禁得太彻底：横屏聊天框还是要能拉动（拉窄/拉宽）。
+    // 方案: 抽屉模式下恢复 swipe，但宽度下限 150px —
+    //   · 拉不到 <80 → 永不触发 touchend 的 hidden 逻辑（不再卡死）
+    //   · expandMobileChat 清理兜底仍保留（M37）
+    //   · 宽度由 CSS min-width(280px)/inline 控制，收起再展开时 expand 清空
+    //     inline style → 回到默认 300px
+    const DRAWER_CHAT_MIN_WIDTH = 150;
     
-    // 初始化时若已是抽屉模式直接禁用（原逻辑保留）
-    if (isDrawerMode()) return;
+    // M38: 不再整体 return（v2.34）— 横屏抽屉模式也允许绑定 swipe，
+    // 聊天面板可拉动（宽度下限保护），侧边栏抽屉模式由 touchstart 内禁用。
+    // 原 M20/M37 的 `if (isDrawerMode()) return;` 会阻止横屏直接加载时的绑定。
     
     let swipeActive = false;
     let swipeTarget = null; // 'sidebar' or 'chat'
@@ -1775,8 +1784,8 @@ function initPanelSwipeResize() {
     // 聊天面板右滑缩小
     chatPanel.addEventListener('touchstart', (e) => {
         if (!isLandscape()) return;
-        // M37: 运行时检查抽屉模式（旋转后进入抽屉模式时禁用 swipe）
-        if (isDrawerMode()) return;
+        // M38: 抽屉模式下允许拉动（v2.34）— 用户要求保留聊天框拖动能力。
+        // 不 return，宽度下限由 doResize 的 DRAWER_CHAT_MIN_WIDTH 保证。
         if (chatPanel.offsetWidth === 0) return;
         
         swipeActive = true;
@@ -1821,7 +1830,10 @@ function initPanelSwipeResize() {
             }
         } else if (swipeTarget === 'chat') {
             // 聊天面板：右滑缩小（deltaX > 0）
-            const newWidth = Math.max(0, startWidth - deltaX);
+            // M38: 抽屉模式下限制最小宽度（v2.34）— 拉不到 <80，
+            // 永不触发 hidden 卡死；普通模式保持原有行为。
+            const minChatWidth = isDrawerMode() ? DRAWER_CHAT_MIN_WIDTH : 0;
+            const newWidth = Math.max(minChatWidth, startWidth - deltaX);
             if (newWidth <= 500) {
                 chatPanel.style.width = newWidth + 'px';
                 chatPanel.style.minWidth = newWidth > 0 ? newWidth + 'px' : '0px';
@@ -1846,11 +1858,16 @@ function initPanelSwipeResize() {
                 sidebar.classList.add('closed');
                 sidebar.classList.remove('open');
             } else if (swipeTarget === 'chat' && chatPanel.offsetWidth < 80) {
-                chatPanel.style.width = '0px';
-                chatPanel.style.minWidth = '0px';
-                chatPanel.style.opacity = '0';
-                chatPanel.style.overflow = 'hidden';
-                chatPanel.classList.add('hidden');
+                // M38: 抽屉模式下拉到最窄也不隐藏（v2.34）—
+                // 宽度下限 DRAWER_CHAT_MIN_WIDTH 已保证 offsetWidth >= 150，
+                // 此分支抽屉模式实际不会进入；防御性判断，避免 hidden 残留。
+                if (!isDrawerMode()) {
+                    chatPanel.style.width = '0px';
+                    chatPanel.style.minWidth = '0px';
+                    chatPanel.style.opacity = '0';
+                    chatPanel.style.overflow = 'hidden';
+                    chatPanel.classList.add('hidden');
+                }
             }
         }
         updateLandscapePanels();
