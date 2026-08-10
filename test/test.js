@@ -579,6 +579,58 @@ async function runTests() {
   } catch (e) { fail('非房主删除频道', e.message); }
 
   // ─────────────────────────────────────
+  // 19.5 频道取消自动删除（M40 v2.36）
+  // ─────────────────────────────────────
+  section('⏱️ 19.5 频道取消自动删除');
+
+  // 频道空闲 → 触发自动删除计时（pendingDelete: true）
+  try {
+    // 用 legalChannelId（Alice 是房主），先让 Alice 加入再离开
+    const joined = waitFor(alice, 'room-users');
+    alice.emit('join-channel', { channelId: legalChannelId, password: '' });
+    await joined;
+    await new Promise(r => setTimeout(r, 200)); // 等 join 广播消化
+    const pending = waitFor(alice, 'channel-updated');
+    alice.emit('leave-channel');
+    const upd = await pending;
+    if (upd.pendingDelete === true) ok('频道空闲: channel-updated pendingDelete=true');
+    else fail('自动删除触发', `pendingDelete=${upd.pendingDelete}`);
+  } catch (e) { fail('自动删除触发', e.message); }
+
+  // 房主主动取消 → pendingDelete: false
+  try {
+    const cancelled = waitFor(alice, 'channel-delete-cancelled');
+    const updated = waitFor(alice, 'channel-updated');
+    alice.emit('cancel-channel-delete', legalChannelId);
+    const c = await cancelled;
+    const u = await updated;
+    if (c === legalChannelId && u.pendingDelete === false) ok('房主取消自动删除: channel-delete-cancelled + pendingDelete=false');
+    else fail('取消自动删除', `cancelled=${c}, pendingDelete=${u.pendingDelete}`);
+  } catch (e) { fail('取消自动删除', e.message); }
+
+  // 非房主取消被拒绝
+  try {
+    // 重新触发删除计时器（Alice 离开）
+    const joined = waitFor(alice, 'room-users');
+    alice.emit('join-channel', { channelId: legalChannelId, password: '' });
+    await joined;
+    await new Promise(r => setTimeout(r, 200));
+    const pending = waitFor(alice, 'channel-updated');
+    alice.emit('leave-channel');
+    await pending;
+    // Bob 尝试取消（非房主）→ 不应有广播
+    bob.emit('cancel-channel-delete', legalChannelId);
+    const rejected = await noEvent(bob, 'channel-delete-cancelled', 1200);
+    if (rejected) ok('非房主取消被拒绝: Bob 无法取消自动删除');
+    else fail('非房主取消', '非房主成功取消了自动删除');
+    // 恢复 Alice 回私密频道（后续测试依赖她在私密频道）
+    const backP = waitFor(alice, 'room-users');
+    alice.emit('join-channel', { channelId: privateChannelId, password: 'pass123' });
+    await backP;
+    await new Promise(r => setTimeout(r, 200));
+  } catch (e) { fail('非房主取消', e.message); }
+
+  // ─────────────────────────────────────
   // 20. 消息撤回权限
   // ─────────────────────────────────────
   section('↩️ 20. 消息撤回权限');
