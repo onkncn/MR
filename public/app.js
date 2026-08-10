@@ -171,6 +171,18 @@ const addChannelBtn = document.getElementById('addChannelBtn');
 const channelListEl = document.getElementById('channelList');
 const currentChannelName = document.getElementById('currentChannelName');
 const renameBtn = document.getElementById('renameBtn');
+// M42: 邀请链接（v2.37）
+const inviteBtn = document.getElementById('inviteBtn');
+const inviteModal = document.getElementById('inviteModal');
+const closeInviteModalBtn = document.getElementById('closeInviteModal');
+const cancelInviteBtn = document.getElementById('cancelInviteBtn');
+const generateInviteBtn = document.getElementById('generateInviteBtn');
+const inviteLinkInput = document.getElementById('inviteLinkInput');
+const inviteCopyBtn = document.getElementById('inviteCopyBtn');
+const inviteChannelName = document.getElementById('inviteChannelName');
+const inviteMaxUses = document.getElementById('inviteMaxUses');
+const inviteExpiresIn = document.getElementById('inviteExpiresIn');
+let pendingInviteToken = null; // 当前频道最新生成的邀请 token
 const channelPlaceholder = document.getElementById('channelPlaceholder');
 const participantsContainer = document.getElementById('participantsContainer');
 const screenShareContainer = document.getElementById('screenShareContainer');
@@ -1309,6 +1321,70 @@ renameBtn.addEventListener('click', () => {
     }
 });
 
+// M42: 邀请链接（v2.37）
+inviteBtn.addEventListener('click', () => {
+    if (!currentChannel) {
+        alert('请先加入频道');
+        return;
+    }
+    inviteChannelName.textContent = currentChannel.name;
+    inviteLinkInput.value = '';
+    // 若本频道已有生成的链接，直接展示
+    if (pendingInviteToken) {
+        inviteLinkInput.value = buildInviteUrl(pendingInviteToken);
+    }
+    openModal(inviteModal);
+});
+closeInviteModalBtn.addEventListener('click', () => closeModal(inviteModal));
+cancelInviteBtn.addEventListener('click', () => closeModal(inviteModal));
+
+generateInviteBtn.addEventListener('click', () => {
+    if (!currentChannel) return;
+    socket.emit('create-invite', {
+        channelId: currentChannel.id,
+        maxUses: parseInt(inviteMaxUses.value, 10) || 0,
+        expiresIn: parseInt(inviteExpiresIn.value, 10) || 86400000
+    });
+});
+
+inviteCopyBtn.addEventListener('click', () => {
+    const url = inviteLinkInput.value;
+    if (!url) return;
+    // 复制到剪贴板（兼容 iOS）
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+            inviteCopyBtn.textContent = '已复制 ✓';
+            setTimeout(() => { inviteCopyBtn.textContent = '复制'; }, 1500);
+        }).catch(() => fallbackCopyInvite(url));
+    } else {
+        fallbackCopyInvite(url);
+    }
+});
+
+function fallbackCopyInvite(url) {
+    inviteLinkInput.select();
+    inviteLinkInput.setSelectionRange(0, 99999);
+    try {
+        document.execCommand('copy');
+        inviteCopyBtn.textContent = '已复制 ✓';
+        setTimeout(() => { inviteCopyBtn.textContent = '复制'; }, 1500);
+    } catch (e) {
+        alert('复制失败，请手动复制链接');
+    }
+}
+
+function buildInviteUrl(token) {
+    const base = location.origin;
+    return `${base}${location.pathname}?invite=${token}`;
+}
+
+socket.on('invite-created', (data) => {
+    // M42: 服务端返回邀请 token → 组装链接展示
+    if (!data || !data.token) return;
+    pendingInviteToken = data.token;
+    inviteLinkInput.value = buildInviteUrl(data.token);
+});
+
 chatSendBtn.addEventListener('click', sendChatMessage);
 chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -2004,6 +2080,12 @@ function login() {
     }
     if (mobileUserName) {
         mobileUserName.textContent = name;
+    }
+    
+    // M42: 邀请链接自动加入（v2.37）— URL 带 ?invite=TOKEN 时登录后验证并加入
+    const inviteToken = new URLSearchParams(location.search).get('invite');
+    if (inviteToken) {
+        socket.emit('join-by-invite', inviteToken);
     }
     
     const isMobile = window.innerWidth <= 768;
@@ -4553,6 +4635,38 @@ socket.on('channel-delete-cancelled', (channelId) => {
     if (t) { clearInterval(t.interval); deleteCountdownTimers.delete(channelId); }
 });
 
+socket.on('invite-valid', (data) => {
+    // M42: 邀请链接验证通过 → 自动加入该频道（v2.37）
+    if (!data || !data.channelId) return;
+    // 清掉 URL 中的 invite 参数，避免刷新后重复加入
+    const url = new URL(location.href);
+    if (url.searchParams.has('invite')) {
+        url.searchParams.delete('invite');
+        history.replaceState({}, '', url);
+    }
+    const inviteChannel = channelList.find(ch => ch.id === data.channelId);
+    if (inviteChannel) {
+        joinChannel(inviteChannel);
+    } else {
+        // 列表里没有（可能刚创建/未刷新），手动构造加入
+        joinChannel({ id: data.channelId, name: data.channelName || '频道', owner: '', users: [], hasPassword: data.hasPassword });
+    }
+});
+
+socket.on('message-deleted', (msgId) => {
+    // M41: 撤回广播 — 从 DOM 与本地列表移除该消息（v2.37）
+    chatMessagesList = chatMessagesList.filter(m => m.id !== msgId);
+    const msgEl = chatMessages.querySelector(`[data-msg-id="${msgId}"]`);
+    if (msgEl) msgEl.remove();
+    // 撤回后如果列表空了，恢复空态占位
+    if (chatMessages.children.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'chat-empty';
+        empty.textContent = '开始聊天吧...';
+        chatMessages.appendChild(empty);
+    }
+});
+
 socket.on('user-connected', async (data) => {
     // 支持旧格式 (string) 和新格式 { name, ip }
     const remoteUserName = typeof data === 'string' ? data : data.name;
@@ -4983,6 +5097,8 @@ function addChatMessage(data) {
     const msgEl = document.createElement('div');
     const isSelf = data.user === userName;
     msgEl.className = 'chat-message ' + (isSelf ? 'self' : 'other');
+    // M41: 消息 ID 供撤回匹配（v2.37）
+    if (data.id) msgEl.dataset.msgId = data.id;
     
     const headerEl = document.createElement('div');
     headerEl.className = 'chat-message-header';
@@ -4997,6 +5113,24 @@ function addChatMessage(data) {
     timeSpan.textContent = data.time;
     headerEl.appendChild(userSpan);
     headerEl.appendChild(timeSpan);
+    
+    // M41: 撤回按钮 — 自己的消息或房主可见（v2.37）
+    // 服务端 delete-message 校验: 作者本人 或 频道房主 可撤
+    const canDelete = (isSelf || (currentChannel && currentChannel.owner === userName));
+    if (canDelete && data.id) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'chat-message-delete';
+        delBtn.title = '撤回消息';
+        delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+        delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm('确定撤回这条消息？')) {
+                socket.emit('delete-message', data.id);
+            }
+        });
+        headerEl.appendChild(delBtn);
+    }
+    
     msgEl.appendChild(headerEl);
     
     const contentEl = document.createElement('div');

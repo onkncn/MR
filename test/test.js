@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=30') && html.includes('style.css?v=28')) {
-      ok('缓存破坏: index.html app.js?v=30 + style.css?v=28');
+    if (html.includes('app.js?v=31') && html.includes('style.css?v=29')) {
+      ok('缓存破坏: index.html app.js?v=31 + style.css?v=29');
     } else {
-      fail('缓存破坏', 'app.js?v=30 / style.css?v=28 未找到');
+      fail('缓存破坏', 'app.js?v=31 / style.css?v=29 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.36: style.css v28 / app.js v30）
-    if (m23Html.includes('app.js?v=30') && m23Html.includes('style.css?v=28')) {
-      ok('M25-9: 缓存破坏 v2.36 (app.js?v=30 + style.css?v=28)');
+    // M25-9: 缓存版本号递增（v2.37: style.css v29 / app.js v31）
+    if (m23Html.includes('app.js?v=31') && m23Html.includes('style.css?v=29')) {
+      ok('M25-9: 缓存破坏 v2.37 (app.js?v=31 + style.css?v=29)');
     } else {
-      fail('M25-9: 缓存版本', 'v30/v28 未找到');
+      fail('M25-9: 缓存版本', 'v31/v29 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1522,6 +1522,42 @@ async function runTests() {
       ok('M40-1: 频道取消自动删除（标记 + 倒计时 + 右键取消 + 监听刷新）');
     } else {
       fail('M40-1: 频道取消删除', '未找到 M40 实现');
+    }
+    
+    // M41-1: 消息撤回（v2.37）— P1-1
+    // 服务端已有 delete-message（作者/房主可撤）+ message-deleted 广播，前端零实现。
+    // 实现: 1) addChatMessage 渲染时给消息元素加 data-msg-id；
+    //       2) 自己的消息或房主可见撤回按钮（chat-message-delete），点击 emit
+    //          delete-message（confirm 确认）；
+    //       3) 监听 message-deleted 广播 → 从 DOM 与 chatMessagesList 移除该消息。
+    if (m23AppJs.includes('M41') &&
+        m23AppJs.includes('chat-message-delete') &&
+        m23AppJs.includes("socket.emit('delete-message'") &&
+        m23AppJs.includes("socket.on('message-deleted'") &&
+        m23AppJs.includes('dataset.msgId') &&
+        m23Css.includes('chat-message-delete')) {
+      ok('M41-1: 消息撤回（撤回按钮 + delete-message + 广播移除）');
+    } else {
+      fail('M41-1: 消息撤回', '未找到 M41 实现');
+    }
+    
+    // M42-1: 邀请链接（v2.37）— 新发现功能，前端完整缺失
+    // 服务端已有 create-invite / join-by-invite / invite-created / invite-valid，
+    // 前端零 UI 零 emit。实现: 1) 频道头部邀请按钮 + 邀请弹窗（次数/有效期选项 +
+    // 链接展示 + 复制）；2) emit create-invite → 监听 invite-created 组装链接；
+    // 3) URL ?invite=TOKEN 登录后自动 join-by-invite → invite-valid → 自动加入频道。
+    if (m23AppJs.includes('M42') &&
+        m23AppJs.includes('create-invite') &&
+        m23AppJs.includes("socket.on('invite-created'") &&
+        m23AppJs.includes("socket.on('invite-valid'") &&
+        m23AppJs.includes('join-by-invite') &&
+        m23AppJs.includes('buildInviteUrl') &&
+        m23Html.includes('inviteModal') &&
+        m23Html.includes('inviteBtn') &&
+        m23Css.includes('invite-link-box')) {
+      ok('M42-1: 邀请链接（生成/复制/URL自动加入）');
+    } else {
+      fail('M42-1: 邀请链接', '未找到 M42 实现');
     }
   }
 

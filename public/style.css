@@ -2240,6 +2240,55 @@ body {
     color: #8e9297;
 }
 
+/* M41: 撤回按钮（v2.37）— 默认半透明，hover 显示 */
+.chat-message-delete {
+    background: none;
+    border: none;
+    padding: 2px;
+    margin-left: auto;
+    color: #8e9297;
+    cursor: pointer;
+    opacity: 0.35;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: opacity 0.15s, background 0.15s;
+}
+.chat-message-delete:hover {
+    opacity: 1;
+    background: rgba(240, 71, 71, 0.15);
+    color: #f04747;
+}
+
+/* M42: 邀请链接弹窗（v2.37） */
+.invite-hint {
+    font-size: 13px;
+    color: #b9bbbe;
+    margin-bottom: 10px;
+}
+.invite-link-box {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+.invite-link-box .modal-input {
+    flex: 1;
+    min-width: 0;
+}
+.invite-options {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.invite-option {
+    flex: 1;
+}
+.invite-option .modal-input {
+    width: 100%;
+    font-size: 13px;
+}
+
 .chat-message-content {
     font-size: 15px;
     color: #dcddde;

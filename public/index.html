@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css?v=28">
+    <link rel="stylesheet" href="style.css?v=29">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -95,6 +95,12 @@
                     </svg>
                     <div class="channel-name-wrapper">
                         <span id="currentChannelName" class="channel-name-display">选择一个频道</span>
+                        <button id="inviteBtn" class="rename-btn" title="生成邀请链接">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                            </svg>
+                        </button>
                         <button id="renameBtn" class="rename-btn" title="重命名">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -432,6 +438,49 @@
         </div>
     </div>
 
+    <!-- M42: 邀请链接弹窗（v2.37） -->
+    <div id="inviteModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>邀请加入频道</h3>
+                <button id="closeInviteModal" class="close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="invite-hint">把链接发给朋友，打开即可加入「<span id="inviteChannelName">频道</span>」</div>
+                <div class="invite-link-box">
+                    <input type="text" id="inviteLinkInput" class="modal-input" readonly>
+                    <button id="inviteCopyBtn" class="btn-primary" style="margin-left: 8px; flex-shrink: 0;">复制</button>
+                </div>
+                <div class="invite-options">
+                    <label class="invite-option">
+                        <select id="inviteMaxUses" class="modal-input">
+                            <option value="0">不限次数</option>
+                            <option value="1">仅 1 次</option>
+                            <option value="5">5 次</option>
+                            <option value="10">10 次</option>
+                        </select>
+                    </label>
+                    <label class="invite-option">
+                        <select id="inviteExpiresIn" class="modal-input">
+                            <option value="3600000">1 小时有效</option>
+                            <option value="86400000" selected>24 小时有效</option>
+                            <option value="604800000">7 天有效</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelInviteBtn" class="btn-secondary">关闭</button>
+                <button id="generateInviteBtn" class="btn-primary">生成链接</button>
+            </div>
+        </div>
+    </div>
+
     <div id="renameModal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
@@ -474,8 +523,8 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=30"></script>
-    <!-- M30: 版本角标（v2.36）— 方便确认手机加载的版本（排查缓存问题） -->
-    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.36</div>
+    <script src="app.js?v=31"></script>
+    <!-- M30: 版本角标（v2.37）— 方便确认手机加载的版本（排查缓存问题） -->
+    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.37</div>
 </body>
 </html>
