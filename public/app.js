@@ -31,6 +31,17 @@ let audioMixDest = null;  // 最终混合输出（麦克风 + 屏幕音频）
 const remoteAudioElements = new Set(); // 追踪远程音频元素
 const remoteAudioByUser = new Map(); // BUGFIX: M11 按用户名索引 Audio 元素
 
+// ====== M39: 语音检测（speaking-status）======
+let speakingAnalyser = null;      // AnalyserNode 检测麦克风音量
+let speakingDetectTimer = null;   // 轮询定时器
+let speakingPrevState = false;    // 上次本地说话状态（防抖/去重 emit）
+const speakingUsers = new Set();  // 当前正在说话的用户名（含自己）
+let speakingHoldCount = 0;        // 说话状态保持计数（防抖）
+const SPEAKING_RMS_THRESHOLD = 0.018;   // 音量阈值（RMS 归一化）
+const SPEAKING_HOLD_FRAMES = 3;         // 连续 N 帧超阈值才判定说话（防误触发）
+const SPEAKING_RELEASE_FRAMES = 8;      // 连续 N 帧低于阈值才判定停止（防闪烁）
+let speakingBelowCount = 0;             // 低于阈值连续计数
+
 // ====== C4: 常量定义 ======
 const DEBOUNCE_SAVE_MS = 1000;
 const MAX_TEXT_MESSAGE_LENGTH = 5000;
@@ -2101,8 +2112,11 @@ function updateChannelList() {
                 
                 const row = document.createElement('div');
                 row.className = 'channel-participant-item';
+                // M39: dataset.user 供语音检测高亮匹配
+                row.dataset.user = u;
                 if (isSharing) row.classList.add('screen-sharing');
                 if (isViewing) row.classList.add('viewing-screen');
+                if (speakingUsers.has(u)) row.classList.add('speaking');
                 
                 // 头像
                 const avatar = document.createElement('div');
@@ -2349,6 +2363,9 @@ function updateOnlineUserList() {
     entries.forEach(({ name, ip, isSelf }) => {
         const item = document.createElement('div');
         item.className = 'online-user-item' + (isSelf ? ' is-self' : '');
+        // M39: dataset.user 供语音检测高亮匹配
+        item.dataset.user = name;
+        if (speakingUsers.has(name)) item.classList.add('speaking');
         
         const avatar = document.createElement('div');
         avatar.className = 'online-user-avatar';
@@ -2825,6 +2842,9 @@ function cleanupAllMedia() {
     selfScreenPreviewEnabled = false;
     viewingScreenOf = null;
     currentScreenSharer = null;
+    // M39: 离开频道清理语音检测（停止广播 + 清空说话人集合）
+    stopSpeakingDetection();
+    speakingUsers.clear();
     // v2.4 聊天记录按频道隔离：离开/被踢/清空时清空聊天面板，
     // 防止切换频道后上一个频道的消息混入当前频道
     clearChatMessages();
@@ -3000,6 +3020,8 @@ async function toggleAudio() {
             });
             
             audioEnabled = true;
+            // M39: 开麦后启动语音检测
+            startSpeakingDetection();
         } catch (err) {
             console.error('获取麦克风失败:', err);
             showAlert('无法访问麦克风，请允许权限: ' + (err.name || err.message || err));
@@ -3008,6 +3030,14 @@ async function toggleAudio() {
     } else {
         audioEnabled = !audioEnabled;
         audioTrack.enabled = audioEnabled;
+        // M39: 关麦停止语音检测（停止广播说话状态）
+        if (!audioEnabled) {
+            stopSpeakingDetection();
+            speakingUsers.delete(userName);
+            updateSpeakingIndicators();
+        } else {
+            startSpeakingDetection();
+        }
     }
     
     updateAudioButtons();
@@ -3037,6 +3067,115 @@ function updateAudioButtons() {
         `;
         toggleAudioBtn.classList.remove('mic-active');
     }
+}
+
+// ====== M39: 语音检测（v2.35）======
+// 本地麦克风音量检测 → 状态变化时 emit speaking-status → 服务端广播给同频道
+// 其他用户 → 前端监听 speaking-status → 在线用户列表/参与者头像高亮绿圈。
+// 检测来源：
+//   - 桌面端: Web Audio 管线中 micGainNode 输出分支（不影响主链路）
+//   - 移动端: 原生音轨（iOS 跳过 Web Audio）→ 额外 MediaStreamSource → AnalyserNode
+function startSpeakingDetection() {
+    stopSpeakingDetection();
+    if (!audioTrack) return;
+    try {
+        const mobile = isMobileDevice();
+        let source;
+        if (!mobile && micGainNode && audioContext) {
+            // 桌面端：从麦克风增益节点分出一路（analyser 不连接输出，只读）
+            speakingAnalyser = audioContext.createAnalyser();
+            speakingAnalyser.fftSize = 512;
+            speakingAnalyser.smoothingTimeConstant = 0.4;
+            micGainNode.connect(speakingAnalyser);
+        } else {
+            // 移动端 / 降级：原生音轨创建独立分析链路（不发送）
+            const ctx = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            source = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
+            speakingAnalyser = ctx.createAnalyser();
+            speakingAnalyser.fftSize = 512;
+            speakingAnalyser.smoothingTimeConstant = 0.4;
+            source.connect(speakingAnalyser);
+        }
+        speakingPrevState = false;
+        speakingHoldCount = 0;
+        speakingBelowCount = 0;
+        speakingDetectTimer = setInterval(updateSpeakingDetection, 120);
+        console.log('[Speaking] 语音检测已启动');
+    } catch (err) {
+        console.warn('[Speaking] 启动失败（不影响通话）:', err.message || err);
+        speakingAnalyser = null;
+    }
+}
+
+function stopSpeakingDetection() {
+    if (speakingDetectTimer) {
+        clearInterval(speakingDetectTimer);
+        speakingDetectTimer = null;
+    }
+    speakingAnalyser = null;
+    // 离开时若还在说话状态，广播停止（让其他人清掉自己的高亮）
+    if (speakingPrevState) {
+        socket.emit('speaking-status', { speaking: false });
+        speakingPrevState = false;
+    }
+    speakingHoldCount = 0;
+    speakingBelowCount = 0;
+}
+
+function updateSpeakingDetection() {
+    if (!speakingAnalyser) return;
+    try {
+        const buf = new Uint8Array(speakingAnalyser.fftSize);
+        speakingAnalyser.getByteTimeDomainData(buf);
+        // RMS 音量（0~1 归一化）
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+            const v = (buf[i] - 128) / 128;
+            sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buf.length);
+        const loud = rms > SPEAKING_RMS_THRESHOLD;
+        
+        let newState = speakingPrevState;
+        if (loud) {
+            speakingHoldCount++;
+            speakingBelowCount = 0;
+            if (speakingHoldCount >= SPEAKING_HOLD_FRAMES) newState = true;
+        } else {
+            speakingBelowCount++;
+            speakingHoldCount = 0;
+            if (speakingBelowCount >= SPEAKING_RELEASE_FRAMES) newState = false;
+        }
+        
+        if (newState !== speakingPrevState) {
+            speakingPrevState = newState;
+            socket.emit('speaking-status', { speaking: newState });
+            // 本地 UI 同步（自己的高亮由本地直接更新，不等服务端回包）
+            if (newState) speakingUsers.add(userName);
+            else speakingUsers.delete(userName);
+            updateSpeakingIndicators();
+        }
+    } catch (err) {
+        console.warn('[Speaking] 检测异常:', err.message || err);
+    }
+}
+
+// 更新所有说话高亮指示（在线用户列表 + 频道参与者列表）
+function updateSpeakingIndicators() {
+    if (onlineUsersList) {
+        onlineUsersList.querySelectorAll('.online-user-item').forEach(item => {
+            const name = item.dataset.user;
+            if (!name) return;
+            item.classList.toggle('speaking', speakingUsers.has(name));
+        });
+    }
+    // 频道参与者列表（主区）
+    document.querySelectorAll('.channel-participant-item').forEach(row => {
+        const name = row.dataset.user;
+        if (!name) return;
+        row.classList.toggle('speaking', speakingUsers.has(name));
+    });
 }
 
 async function toggleDenoise() {
@@ -4396,6 +4535,18 @@ socket.on('user-disconnected', (remoteUserName) => {
     
     updateParticipantsDisplay();
     updateOnlineUserList();
+});
+
+socket.on('speaking-status', (data) => {
+    // M39: 服务端广播谁在说话（user = socket.userId = 用户名）
+    if (!data || !data.user) return;
+    const name = data.user;
+    if (data.speaking) {
+        speakingUsers.add(name);
+    } else {
+        speakingUsers.delete(name);
+    }
+    updateSpeakingIndicators();
 });
 
 socket.on('offer', async (data) => {

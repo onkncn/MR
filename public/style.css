@@ -448,6 +448,15 @@ body {
     color: #3ba55c;
 }
 
+/* M39: 语音检测 — 正在说话的人高亮绿圈 + 名字变绿 */
+.channel-participant-item.speaking .channel-participant-avatar {
+    box-shadow: 0 0 0 3px #3ba55c;
+}
+.channel-participant-item.speaking .channel-participant-name {
+    color: #3ba55c;
+    font-weight: 600;
+}
+
 /* 屏幕共享标记 */
 .channel-participant-badge {
     font-size: 10px;
@@ -2137,6 +2146,15 @@ body {
 
 .online-user-item.is-self .online-user-avatar {
     background: #3ba55c;
+}
+
+/* M39: 语音检测 — 正在说话的人高亮绿圈 */
+.online-user-item.speaking .online-user-avatar {
+    box-shadow: 0 0 0 3px #3ba55c;
+}
+.online-user-item.speaking .online-user-name {
+    color: #3ba55c;
+    font-weight: 600;
 }
 
 .online-user-ip {

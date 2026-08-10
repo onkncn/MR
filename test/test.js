@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=28') && html.includes('style.css?v=26')) {
-      ok('缓存破坏: index.html app.js?v=28 + style.css?v=26');
+    if (html.includes('app.js?v=29') && html.includes('style.css?v=27')) {
+      ok('缓存破坏: index.html app.js?v=29 + style.css?v=27');
     } else {
-      fail('缓存破坏', 'app.js?v=28 / style.css?v=26 未找到');
+      fail('缓存破坏', 'app.js?v=29 / style.css?v=27 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.34: style.css v26 / app.js v28）
-    if (m23Html.includes('app.js?v=28') && m23Html.includes('style.css?v=26')) {
-      ok('M25-9: 缓存破坏 v2.34 (app.js?v=28 + style.css?v=26)');
+    // M25-9: 缓存版本号递增（v2.35: style.css v27 / app.js v29）
+    if (m23Html.includes('app.js?v=29') && m23Html.includes('style.css?v=27')) {
+      ok('M25-9: 缓存破坏 v2.35 (app.js?v=29 + style.css?v=27)');
     } else {
-      fail('M25-9: 缓存版本', 'v28/v26 未找到');
+      fail('M25-9: 缓存版本', 'v29/v27 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1485,6 +1485,24 @@ async function runTests() {
       ok('M37-1: 横屏聊天抽屉可拉动且可重开（M38 精修：150px 下限 + expand 清理）');
     } else {
       fail('M37-1: 聊天抽屉拉动', '未找到 M38 修复逻辑');
+    }
+    
+    // M39-1: 语音检测（v2.35）— P1-4 服务端 speaking-status 前端实现
+    // 服务端早已有 speaking-status 广播（server.js 548行），前端零监听。
+    // 实现: 本地 AnalyserNode 检测麦克风 RMS 音量（防抖阈值）→ 状态变化时
+    //       emit speaking-status → 监听服务端广播维护 speakingUsers Set →
+    //       在线用户列表/频道参与者头像高亮绿圈（.speaking class）。
+    if (m23AppJs.includes('M39') &&
+        m23AppJs.includes('speakingUsers') &&
+        m23AppJs.includes('startSpeakingDetection') &&
+        m23AppJs.includes('updateSpeakingDetection') &&
+        m23AppJs.includes("socket.on('speaking-status'") &&
+        m23AppJs.includes('SPEAKING_RMS_THRESHOLD') &&
+        m23Css.includes('online-user-item.speaking') &&
+        m23Css.includes('channel-participant-item.speaking')) {
+      ok('M39-1: 语音检测实现（AnalyserNode 检测 + speaking-status 广播 + 高亮）');
+    } else {
+      fail('M39-1: 语音检测', '未找到 M39 实现');
     }
   }
 
