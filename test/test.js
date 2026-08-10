@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=24') && html.includes('style.css?v=22')) {
-      ok('缓存破坏: index.html app.js?v=24 + style.css?v=22');
+    if (html.includes('app.js?v=25') && html.includes('style.css?v=22')) {
+      ok('缓存破坏: index.html app.js?v=25 + style.css?v=22');
     } else {
-      fail('缓存破坏', 'app.js?v=24 / style.css?v=22 未找到');
+      fail('缓存破坏', 'app.js?v=25 / style.css?v=22 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,26 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.27: style.css v22 / app.js v24）
-    if (m23Html.includes('app.js?v=24') && m23Html.includes('style.css?v=22')) {
-      ok('M25-9: 缓存破坏 v2.27 (app.js?v=24 + style.css?v=22)');
+    // M25-9: 缓存版本号递增（v2.28: style.css v22 / app.js v25）
+    if (m23Html.includes('app.js?v=25') && m23Html.includes('style.css?v=22')) {
+      ok('M25-9: 缓存破坏 v2.28 (app.js?v=25 + style.css?v=22)');
     } else {
-      fail('M25-9: 缓存版本', 'v24/v22 未找到');
+      fail('M25-9: 缓存版本', 'v25/v22 未找到');
+    }
+    
+    // M34-1: 横竖屏切换按钮不可用修复（v2.28）
+    // 根因: 1) iOS Safari 无 screen.orientation.lock → 旧代码静默 return → 按钮无反应;
+    //       2) 桌面 Chrome 非全屏 lock() 抛 SecurityError → 仅 console.warn → 用户无感知;
+    //       3) 无任何用户可见反馈。
+    // 修复: iOS → showAlert 引导手动旋转; 桌面 Chrome → requestFullscreen 后再 lock;
+    //       其他失败 → showAlert 可见提示。
+    if (m23AppJs.includes('M34') &&
+        m23AppJs.includes("typeof screen.orientation.lock !== 'function'") &&
+        m23AppJs.includes('请手动旋转设备') &&
+        m23AppJs.includes('requestFullscreen')) {
+      ok('M34-1: 横竖屏切换修复（iOS 引导手动旋转 + 桌面 Chrome 先全屏再锁定）');
+    } else {
+      fail('M34-1: 横竖屏切换修复', '未找到 M34 逻辑');
     }
   }
 

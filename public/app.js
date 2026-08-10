@@ -4084,14 +4084,47 @@ function toggleScreenFullscreen() {
 }
 
 // ====== 横竖屏切换（Screen Orientation API） ======
+// BUGFIX: M34 横竖屏切换按钮不可用（v2.28）
+// 根因: 1) iOS Safari 不支持 screen.orientation.lock()（lock 不是函数）→ 静默 return → 按钮无反应;
+//       2) 桌面 Chrome 非全屏时 lock() 抛 SecurityError → 仅 console.warn → 用户看不到效果;
+//       3) 失败时无任何用户可见反馈。
+// 修复: iOS → toast 引导手动旋转; 桌面 Chrome → 先进入全屏再锁定（Chrome 要求全屏才能 lock）;
+//       其他失败 → showAlert 可见提示。
 function toggleOrientation() {
-    if (!screen.orientation || typeof screen.orientation.lock !== 'function') return;
-
     const isLandscape = window.innerWidth > window.innerHeight;
     const targetOrientation = isLandscape ? 'portrait' : 'landscape';
 
+    // iOS Safari: screen.orientation.lock 不存在 → 无法自动旋转，引导手动
+    if (!screen.orientation || typeof screen.orientation.lock !== 'function') {
+        if (isIOS()) {
+            showAlert('iOS 不支持自动横竖屏切换，请手动旋转设备', '提示');
+        } else {
+            showAlert('当前浏览器不支持自动切换横竖屏，请手动旋转设备', '提示');
+        }
+        return;
+    }
+
     screen.orientation.lock(targetOrientation).catch(err => {
         console.warn('[Orientation] 锁定失败:', err.name, err.message);
+        // Chrome 桌面/部分浏览器要求全屏才能 lock → 先进入全屏再锁定
+        if (err && (err.name === 'SecurityError' || err.name === 'NotSupportedError')) {
+            const el = document.documentElement;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen;
+            if (req) {
+                req.call(el).then(() => {
+                    screen.orientation.lock(targetOrientation).catch(e2 => {
+                        console.warn('[Orientation] 全屏后锁定仍失败:', e2.name, e2.message);
+                        showAlert('横竖屏切换失败: ' + (e2.message || e2.name), '提示');
+                    });
+                }).catch(() => {
+                    showAlert('进入全屏失败，请手动旋转设备', '提示');
+                });
+            } else {
+                showAlert('当前浏览器不支持自动切换横竖屏，请手动旋转设备', '提示');
+            }
+        } else {
+            showAlert('横竖屏切换失败: ' + (err.message || err.name), '提示');
+        }
     });
 }
 
