@@ -573,6 +573,17 @@ function isMobileChatSheetActive() {
 
 function expandMobileChat() {
     if (!isMobileChatSheetActive()) return;
+    // BUGFIX: M37 清理残留状态（v2.33）— 防止被宽度 swipe 逻辑（旧代码）
+    // 或任何路径留下 width:0/opacity:0/hidden 后无法重新打开：
+    // 1) 移除 hidden class（CSS `.chat-panel.hidden` 的 transform 会盖过 mobile-expanded）
+    // 2) 清空内联 width/minWidth/opacity/overflow（swipe 缩到 0 宽残留）
+    // 3) 清空 transform（避免残留 translateX(100%)）
+    chatPanel.classList.remove('hidden');
+    chatPanel.style.width = '';
+    chatPanel.style.minWidth = '';
+    chatPanel.style.opacity = '';
+    chatPanel.style.overflow = '';
+    chatPanel.style.transform = '';
     chatPanel.classList.add('mobile-expanded');
     // BUGFIX: M21 抽屉打开时控制栏保持显示（v2.10）
     const mainControls = document.querySelector('.main-controls');
@@ -1725,8 +1736,16 @@ function initPanelSwipeResize() {
     const isLandscape = () => window.matchMedia('(orientation: landscape)').matches;
     
     // BUGFIX: M20 横屏抽屉模式（v2.9）下禁用宽度滑动 —
-    // 侧边栏/聊天面板改为 fixed 覆盖式抽屉，宽度固定，滑动改宽度会破坏布局
-    if (window.innerWidth <= 1024 && isLandscape()) return;
+    // 侧边栏/聊天面板改为 fixed 覆盖式抽屉，宽度固定，滑动改宽度会破坏布局。
+    // BUGFIX: M37 原守卫只在初始化时判断一次（v2.33）—
+    // 竖屏打开页面时 isLandscape()=false 不 return，事件照常绑定；
+    // 之后旋转横屏进入抽屉模式，swipe 仍活跃 → 聊天面板往右拉被缩到 0 宽
+    // + hidden class，且 expandMobileChat 不清 hidden → 聊天再也打不开。
+    // 改为运行时检查：isDrawerMode 时 swipe 完全失效。
+    const isDrawerMode = () => window.innerWidth <= 1024 && isLandscape();
+    
+    // 初始化时若已是抽屉模式直接禁用（原逻辑保留）
+    if (isDrawerMode()) return;
     
     let swipeActive = false;
     let swipeTarget = null; // 'sidebar' or 'chat'
@@ -1740,6 +1759,8 @@ function initPanelSwipeResize() {
     // 侧边栏左滑缩小
     sidebar.addEventListener('touchstart', (e) => {
         if (!isLandscape()) return;
+        // M37: 运行时检查抽屉模式（旋转后进入抽屉模式时禁用 swipe）
+        if (isDrawerMode()) return;
         if (sidebar.offsetWidth === 0) return;
         
         swipeActive = true;
@@ -1754,6 +1775,8 @@ function initPanelSwipeResize() {
     // 聊天面板右滑缩小
     chatPanel.addEventListener('touchstart', (e) => {
         if (!isLandscape()) return;
+        // M37: 运行时检查抽屉模式（旋转后进入抽屉模式时禁用 swipe）
+        if (isDrawerMode()) return;
         if (chatPanel.offsetWidth === 0) return;
         
         swipeActive = true;

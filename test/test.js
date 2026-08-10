@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=26') && html.includes('style.css?v=26')) {
-      ok('缓存破坏: index.html app.js?v=26 + style.css?v=26');
+    if (html.includes('app.js?v=27') && html.includes('style.css?v=26')) {
+      ok('缓存破坏: index.html app.js?v=27 + style.css?v=26');
     } else {
-      fail('缓存破坏', 'app.js?v=26 / style.css?v=26 未找到');
+      fail('缓存破坏', 'app.js?v=27 / style.css?v=26 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.32: style.css v26 / app.js v26）
-    if (m23Html.includes('app.js?v=26') && m23Html.includes('style.css?v=26')) {
-      ok('M25-9: 缓存破坏 v2.32 (app.js?v=26 + style.css?v=26)');
+    // M25-9: 缓存版本号递增（v2.33: style.css v26 / app.js v27）
+    if (m23Html.includes('app.js?v=27') && m23Html.includes('style.css?v=26')) {
+      ok('M25-9: 缓存破坏 v2.33 (app.js?v=27 + style.css?v=26)');
     } else {
-      fail('M25-9: 缓存版本', 'v26/v26 未找到');
+      fail('M25-9: 缓存版本', 'v27/v26 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1460,6 +1460,24 @@ async function runTests() {
       ok('M36-1: 灵动岛横屏适配（仅频道列表项避让，头像/标题/聊天栏原位）');
     } else {
       fail('M36-1: 灵动岛适配', '未找到 v2.32 精修规则');
+    }
+    
+    // M37-1: 横屏聊天抽屉拉出后无法再打开修复（v2.33）
+    // 根因: initPanelSwipeResize 守卫只在初始化时判断一次 —
+    //       竖屏打开页面时 isLandscape()=false 不 return，事件照常绑定；
+    //       旋转横屏进入抽屉模式后 swipe 仍活跃 → 聊天面板往右拉被缩到
+    //       0 宽 + hidden class；expandMobileChat 不清 hidden/inline style
+    //       → 聊天再也打不开（CSS hidden transform 盖过 mobile-expanded）。
+    // 修复: 1) swipe touchstart 运行时检查 isDrawerMode（旋转后禁用）；
+    //       2) expandMobileChat 清理 hidden class + 内联 width/opacity/overflow/transform。
+    if (m23AppJs.includes('M37') &&
+        m23AppJs.includes('const isDrawerMode = () => window.innerWidth <= 1024 && isLandscape()') &&
+        m23AppJs.includes('if (isDrawerMode()) return') &&
+        m23AppJs.includes("chatPanel.classList.remove('hidden')") &&
+        m23AppJs.includes("chatPanel.style.width = ''")) {
+      ok('M37-1: 横屏聊天抽屉可重开（swipe 运行时禁用 + expand 清理残留）');
+    } else {
+      fail('M37-1: 聊天抽屉重开', '未找到 M37 修复逻辑');
     }
   }
 
