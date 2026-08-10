@@ -652,6 +652,36 @@ io.on('connection', (socket) => {
     }
   });
 
+  // M43: 定时发送（v2.38）— 服务端延迟投递，页面关闭/断开也存活
+  socket.on('schedule-message', (data) => {
+    if (!socket.username || !socket.currentChannel) return;
+    if (!data || !data.message) return;
+    if (typeof data.delayMs !== 'number' || data.delayMs < 1000 || data.delayMs > 86400000) return;
+    // 校验同 chat-message
+    if (data.type !== 'image' && data.type !== 'video' && data.message.length > MAX_TEXT_MESSAGE_LENGTH) return;
+    if (data.type === 'image' || data.type === 'video') {
+      if (!data.message.startsWith('data:')) return;
+      if (data.message.length > MAX_DATA_MESSAGE_LENGTH) return;
+    }
+    const channelId = socket.currentChannel;
+    const channel = channels.get(channelId);
+    if (!channel) return;
+    const msgData = { ...data, user: socket.username };
+    // 服务端定时器：到点后持久化并广播（不依赖发送者 socket 存活）
+    const timer = setTimeout(() => {
+      if (!channels.has(channelId)) return; // 频道已删除
+      const msgId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+      const msg = { ...msgData, id: msgId, reactions: {} };
+      if (!channelMessages.has(channelId)) channelMessages.set(channelId, []);
+      const msgs = channelMessages.get(channelId);
+      msgs.push(msg);
+      if (msgs.length > MAX_MESSAGES) msgs.splice(0, msgs.length - MAX_MESSAGES);
+      saveMessages();
+      io.to(channelId).emit('chat-message', msg);
+    }, data.delayMs);
+    socket.emit('schedule-confirmed', { at: Date.now() + data.delayMs, channelId });
+  });
+
   // 消息撤回
   socket.on('delete-message', (msgId) => {
     if (!socket.currentChannel) return;

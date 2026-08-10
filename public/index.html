@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css?v=29">
+    <link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -334,6 +334,69 @@
             </div>
             <div class="chat-input-area">
                 <div class="chat-preview-area hidden" id="chatPreviewArea"></div>
+                <!-- M43: 输入框工具栏（v2.38）— 仿飞书输入框 -->
+                <div class="chat-toolbar hidden" id="chatToolbar">
+                    <button id="toolbarFormatBtn" class="chat-toolbar-btn" title="文字格式">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="4 7 4 4 20 4 20 7"></polyline>
+                            <line x1="9" y1="20" x2="15" y2="20"></line>
+                            <line x1="12" y1="4" x2="12" y2="20"></line>
+                        </svg>
+                    </button>
+                    <button id="toolbarEmojiBtn" class="chat-toolbar-btn" title="表情">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                            <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                            <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                        </svg>
+                    </button>
+                    <button id="toolbarAtBtn" class="chat-toolbar-btn" title="@ 提及">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="4"></circle>
+                            <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"></path>
+                        </svg>
+                    </button>
+                    <button id="toolbarClearBtn" class="chat-toolbar-btn" title="清空输入">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                    </button>
+                    <button id="toolbarScheduleBtn" class="chat-toolbar-btn" title="定时发送">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                    </button>
+                    <button id="toolbarExpandBtn" class="chat-toolbar-btn" title="展开输入框">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="4 7 4 4 7 4"></polyline>
+                            <polyline points="17 4 20 4 20 7"></polyline>
+                            <polyline points="20 17 20 20 17 20"></polyline>
+                            <polyline points="7 20 4 20 4 17"></polyline>
+                        </svg>
+                    </button>
+                </div>
+                <!-- 表情面板（M43） -->
+                <div class="chat-emoji-panel hidden" id="chatEmojiPanel"></div>
+                <!-- @提及联想（M43） -->
+                <div class="chat-at-panel hidden" id="chatAtPanel"></div>
+                <!-- 定时发送面板（M43） -->
+                <div class="chat-schedule-panel hidden" id="chatSchedulePanel">
+                    <div class="schedule-preset" data-min="1">1 分钟后</div>
+                    <div class="schedule-preset" data-min="5">5 分钟后</div>
+                    <div class="schedule-preset" data-min="10">10 分钟后</div>
+                    <div class="schedule-preset" data-min="30">30 分钟后</div>
+                    <div class="schedule-preset" data-min="60">1 小时后</div>
+                    <div class="schedule-preset" data-min="1440">明天</div>
+                    <div class="schedule-custom">
+                        <input type="number" id="scheduleCustomMin" min="1" max="10080" placeholder="分钟">
+                        <button id="scheduleCustomBtn">自定义</button>
+                    </div>
+                </div>
                 <button id="chatFileBtn" class="chat-file-btn" title="发送图片/视频">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -341,7 +404,7 @@
                         <polyline points="21 15 16 10 5 21"></polyline>
                     </svg>
                 </button>
-                <input type="text" id="chatInput" placeholder="输入消息..." class="chat-input">
+                <textarea id="chatInput" placeholder="输入消息..." class="chat-input" rows="1"></textarea>
                 <button id="chatSendBtn" class="chat-send-btn" title="发送">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -523,8 +586,8 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=31"></script>
-    <!-- M30: 版本角标（v2.37）— 方便确认手机加载的版本（排查缓存问题） -->
-    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.37</div>
+    <script src="app.js?v=32"></script>
+    <!-- M30: 版本角标（v2.38）— 方便确认手机加载的版本（排查缓存问题） -->
+    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.38</div>
 </body>
 </html>

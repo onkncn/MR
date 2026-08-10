@@ -218,6 +218,23 @@ const chatPanel = document.getElementById('chatPanel');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const chatSendBtn = document.getElementById('chatSendBtn');
+// M43: 输入框工具栏（v2.38）— 仿飞书输入框
+const chatToolbar = document.getElementById('chatToolbar');
+const toolbarFormatBtn = document.getElementById('toolbarFormatBtn');
+const toolbarEmojiBtn = document.getElementById('toolbarEmojiBtn');
+const toolbarAtBtn = document.getElementById('toolbarAtBtn');
+const toolbarClearBtn = document.getElementById('toolbarClearBtn');
+const toolbarScheduleBtn = document.getElementById('toolbarScheduleBtn');
+const toolbarExpandBtn = document.getElementById('toolbarExpandBtn');
+const chatEmojiPanel = document.getElementById('chatEmojiPanel');
+const chatAtPanel = document.getElementById('chatAtPanel');
+const chatSchedulePanel = document.getElementById('chatSchedulePanel');
+const scheduleCustomMin = document.getElementById('scheduleCustomMin');
+const scheduleCustomBtn = document.getElementById('scheduleCustomBtn');
+// M43: 文字格式面板（动态创建）
+let formatPanelEl = null;
+// M43: 表情面板状态
+const CHAT_EMOJIS = ['😀','😂','😊','😍','😎','🤔','😅','😭','😡','👍','👎','👏','🙏','💪','🔥','🎉','❤️','💯','✨','🎵','☕','🍺','🚀','✅','❌','❓','❗','💤','🤝','👋'];
 const chatFileBtn = document.getElementById('chatFileBtn');
 const chatPreviewArea = document.getElementById('chatPreviewArea');
 const chatCollapseBtn = document.getElementById('chatCollapseBtn');
@@ -1387,11 +1404,243 @@ socket.on('invite-created', (data) => {
 
 chatSendBtn.addEventListener('click', sendChatMessage);
 chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    // M43: textarea 下 Enter 发送、Shift+Enter 换行（v2.38）
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         sendChatMessage();
     }
 });
 chatInput.addEventListener('paste', handleChatPaste);
+
+// ─────────────────────────────────────
+// M43: 输入框工具栏（v2.38）— 仿飞书输入框
+// ─────────────────────────────────────
+
+// 面板互斥：打开一个面板时关闭其他
+function closeChatPanels(except) {
+    if (except !== 'emoji') chatEmojiPanel.classList.add('hidden');
+    if (except !== 'at') chatAtPanel.classList.add('hidden');
+    if (except !== 'schedule') chatSchedulePanel.classList.add('hidden');
+    if (except !== 'format' && formatPanelEl) formatPanelEl.classList.add('hidden');
+}
+
+// 光标处插入文本（textarea 通用）
+function insertAtCursor(text) {
+    const start = chatInput.selectionStart;
+    const end = chatInput.selectionEnd;
+    const val = chatInput.value;
+    chatInput.value = val.slice(0, start) + text + val.slice(end);
+    const newPos = start + text.length;
+    chatInput.selectionStart = chatInput.selectionEnd = newPos;
+    chatInput.focus();
+    autoResizeChatInput();
+}
+
+// textarea 自动伸缩（多行展开）
+function autoResizeChatInput() {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
+    // 工具栏状态：有内容才显示清空
+    if (toolbarClearBtn) toolbarClearBtn.style.display = chatInput.value.trim() ? '' : 'none';
+}
+chatInput.addEventListener('input', autoResizeChatInput);
+
+// ① 表情面板
+function buildEmojiPanel() {
+    chatEmojiPanel.innerHTML = '';
+    CHAT_EMOJIS.forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.className = 'emoji-cell';
+        btn.textContent = emoji;
+        btn.addEventListener('click', () => {
+            insertAtCursor(emoji);
+        });
+        chatEmojiPanel.appendChild(btn);
+    });
+}
+buildEmojiPanel();
+toolbarEmojiBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = chatEmojiPanel.classList.contains('hidden');
+    closeChatPanels();
+    if (willOpen) chatEmojiPanel.classList.remove('hidden');
+});
+
+// ② @ 提及联想
+function buildAtPanel() {
+    chatAtPanel.innerHTML = '';
+    // 频道参与者 + 自己
+    const names = new Set();
+    if (currentChannel && currentChannel.users) {
+        currentChannel.users.forEach(u => names.add(u));
+    }
+    names.add(userName);
+    names.forEach(name => {
+        const item = document.createElement('div');
+        item.className = 'at-item';
+        const avatar = document.createElement('span');
+        avatar.className = 'at-avatar';
+        avatar.textContent = name.charAt(0).toUpperCase();
+        const label = document.createElement('span');
+        label.textContent = name;
+        item.appendChild(avatar);
+        item.appendChild(label);
+        item.addEventListener('click', () => {
+            insertAtCursor('@' + name + ' ');
+            chatAtPanel.classList.add('hidden');
+        });
+        chatAtPanel.appendChild(item);
+    });
+}
+toolbarAtBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    buildAtPanel();
+    const willOpen = chatAtPanel.classList.contains('hidden');
+    closeChatPanels();
+    if (willOpen) chatAtPanel.classList.remove('hidden');
+});
+
+// ③ 文字格式面板（粗体/斜体/删除线/行内代码）
+function buildFormatPanel() {
+    if (formatPanelEl) { formatPanelEl.remove(); }
+    formatPanelEl = document.createElement('div');
+    formatPanelEl.className = 'chat-format-panel hidden';
+    const formats = [
+        { label: '粗体', sym: '**', test: /^\*\*[^*]+?\*\*$/ },
+        { label: '斜体', sym: '*', test: /^\/[^*]+\/$/ },
+        { label: '删除线', sym: '~~', test: /^~~[^~]+?~~$/ },
+        { label: '行内代码', sym: '`', test: /^`[^`]+?`$/ }
+    ];
+    formats.forEach(f => {
+        const btn = document.createElement('button');
+        btn.className = 'format-btn';
+        btn.textContent = f.label;
+        btn.addEventListener('click', () => {
+            const start = chatInput.selectionStart;
+            const end = chatInput.selectionEnd;
+            const selected = chatInput.value.slice(start, end) || '文字';
+            // 如果选中内容已被包裹则解包
+            let wrapped = f.sym + selected + f.sym;
+            if (selected.startsWith(f.sym) && selected.endsWith(f.sym) && selected.length > f.sym.length * 2) {
+                wrapped = selected.slice(f.sym.length, -f.sym.length);
+            }
+            chatInput.value = chatInput.value.slice(0, start) + wrapped + chatInput.value.slice(end);
+            chatInput.selectionStart = chatInput.selectionEnd = start + wrapped.length;
+            chatInput.focus();
+            autoResizeChatInput();
+            formatPanelEl.classList.add('hidden');
+        });
+        formatPanelEl.appendChild(btn);
+    });
+    // 插入位置：工具栏下方
+    chatToolbar.parentNode.insertBefore(formatPanelEl, chatToolbar.nextSibling);
+}
+buildFormatPanel();
+toolbarFormatBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = formatPanelEl.classList.contains('hidden');
+    closeChatPanels();
+    if (willOpen) formatPanelEl.classList.remove('hidden');
+});
+
+// ④ 清空输入
+toolbarClearBtn.addEventListener('click', () => {
+    if (chatInput.value.trim() && confirm('清空当前输入内容？')) {
+        chatInput.value = '';
+        autoResizeChatInput();
+        chatInput.focus();
+    } else if (!chatInput.value.trim()) {
+        chatInput.focus();
+    }
+});
+
+// ⑤ 定时发送面板
+toolbarScheduleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = chatSchedulePanel.classList.contains('hidden');
+    closeChatPanels();
+    if (willOpen) chatSchedulePanel.classList.remove('hidden');
+});
+chatSchedulePanel.querySelectorAll('.schedule-preset').forEach(el => {
+    el.addEventListener('click', () => {
+        const min = parseInt(el.dataset.min, 10);
+        scheduleChatSend(min * 60 * 1000);
+    });
+});
+scheduleCustomBtn.addEventListener('click', () => {
+    const min = parseInt(scheduleCustomMin.value, 10);
+    if (min && min > 0) {
+        scheduleChatSend(min * 60 * 1000);
+    }
+});
+
+// 定时发送：交给服务端延迟投递（页面关闭/断开也存活，v2.38）
+let scheduledMessage = null;
+function scheduleChatSend(delayMs) {
+    const message = chatInput.value.trim();
+    if (!currentChannel) { alert('请先加入频道'); return; }
+    if (!message && pendingImages.length === 0) { alert('请输入要发送的内容'); return; }
+    const timeStr = new Date(Date.now() + delayMs).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (!confirm(`将在 ${timeStr} 定时发送当前消息？`)) return;
+    // 存储待发送内容（文本 + 图片）
+    scheduledMessage = {
+        text: message,
+        images: pendingImages.slice(),
+        channelId: currentChannel.id
+    };
+    // 发送文本到服务端定时
+    if (message) {
+        socket.emit('schedule-message', {
+            message: message,
+            type: 'text',
+            delayMs: delayMs
+        });
+    }
+    // 图片/视频定时（逐条）
+    scheduledMessage.images.forEach(img => {
+        socket.emit('schedule-message', {
+            message: img.dataUrl,
+            type: img.type || 'image',
+            fileName: img.fileName,
+            delayMs: delayMs
+        });
+    });
+    // 清空输入框和预览
+    chatInput.value = '';
+    pendingImages = [];
+    clearImagePreview();
+    autoResizeChatInput();
+    chatSchedulePanel.classList.add('hidden');
+    scheduledMessage = null;
+}
+
+socket.on('schedule-confirmed', (data) => {
+    // M43: 服务端确认定时发送已登记
+    const minLeft = Math.max(1, Math.round((data.at - Date.now()) / 60000));
+    showAlert(`消息将在 ${minLeft} 分钟后自动发送`);
+});
+
+// ⑥ 展开输入框（多行切换）
+toolbarExpandBtn.addEventListener('click', () => {
+    const expanded = chatInput.classList.toggle('expanded');
+    if (expanded) {
+        chatInput.style.height = '120px';
+        toolbarExpandBtn.style.color = '#5865f2';
+    } else {
+        chatInput.style.height = 'auto';
+        toolbarExpandBtn.style.color = '';
+        autoResizeChatInput();
+    }
+});
+
+// 点击空白处关闭所有面板
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.chat-toolbar') && !e.target.closest('.chat-emoji-panel') &&
+        !e.target.closest('.chat-at-panel') && !e.target.closest('.chat-schedule-panel') &&
+        !e.target.closest('.chat-format-panel')) {
+        closeChatPanels();
+    }
+});
 
 // iOS 兼容的文件选择：使用视觉隐藏而非 display:none，避免移动端拦截 click()
 function createFileInput() {
@@ -2916,6 +3165,8 @@ async function joinChannel(channel) {
         socket.emit('join-channel', { channelId: channel.id, password: password });
         updateAudioButtons();
         updateParticipantsDisplay();
+        // M43: 加入频道后显示输入框工具栏（v2.38）
+        chatToolbar.classList.remove('hidden');
         
         // 如果上次麦克风是开启的，自动尝试开麦（会触发权限请求）
         if (savedMicState) {
@@ -3018,6 +3269,11 @@ async function leaveChannel() {
     // 退出聊天全屏模式
     room.classList.remove('chat-only');
     if (toggleChatExpandBtn) toggleChatExpandBtn.classList.remove('active');
+
+    // M43: 离开频道后隐藏工具栏并清理面板状态（v2.38）
+    chatToolbar.classList.add('hidden');
+    closeChatPanels();
+    scheduledMessage = null;
 
     // 重置按钮状态
     updateAudioButtons();

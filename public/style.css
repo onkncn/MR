@@ -2433,6 +2433,198 @@ body {
     gap: 8px;
     border-top: 1px solid #202225;
     margin-top: auto;
+    flex-wrap: wrap;
+}
+
+/* M43: 输入框工具栏（v2.38）— 仿飞书输入框 */
+.chat-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 8px;
+}
+.chat-toolbar.hidden {
+    display: none;
+}
+.chat-toolbar-btn {
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    color: #b9bbbe;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+.chat-toolbar-btn:hover {
+    color: #dcddde;
+    background: rgba(255,255,255,0.08);
+}
+.chat-toolbar-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* 表情面板 */
+.chat-emoji-panel {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 2px;
+    width: 100%;
+    padding: 8px;
+    background: #202225;
+    border: 1px solid #2f3136;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    max-height: 140px;
+    overflow-y: auto;
+}
+.chat-emoji-panel.hidden {
+    display: none;
+}
+.emoji-cell {
+    background: none;
+    border: none;
+    font-size: 20px;
+    padding: 4px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s;
+}
+.emoji-cell:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* @ 提及面板 */
+.chat-at-panel {
+    width: 100%;
+    max-height: 160px;
+    overflow-y: auto;
+    background: #202225;
+    border: 1px solid #2f3136;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 4px;
+}
+.chat-at-panel.hidden {
+    display: none;
+}
+.at-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.at-item:hover {
+    background: rgba(255,255,255,0.08);
+}
+.at-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #5865f2;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.at-item span:last-child {
+    font-size: 14px;
+    color: #dcddde;
+}
+
+/* 文字格式面板 */
+.chat-format-panel {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    padding: 6px 8px;
+    background: #202225;
+    border: 1px solid #2f3136;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+.chat-format-panel.hidden {
+    display: none;
+}
+.format-btn {
+    flex: 1;
+    padding: 6px 0;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: #dcddde;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.format-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* 定时发送面板 */
+.chat-schedule-panel {
+    width: 100%;
+    background: #202225;
+    border: 1px solid #2f3136;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 8px;
+}
+.chat-schedule-panel.hidden {
+    display: none;
+}
+.schedule-preset {
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #dcddde;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.schedule-preset:hover {
+    background: rgba(255,255,255,0.08);
+}
+.schedule-custom {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+}
+.schedule-custom input {
+    flex: 1;
+    padding: 6px 8px;
+    background: #2f3136;
+    border: 1px solid #40444b;
+    border-radius: 6px;
+    color: #dcddde;
+    font-size: 13px;
+    outline: none;
+    min-width: 0;
+}
+.schedule-custom button {
+    padding: 6px 12px;
+    background: #5865f2;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
 }
 
 .chat-file-btn {
@@ -2481,6 +2673,16 @@ body {
     outline: none;
     transition: border-color 0.2s;
     min-width: 0;
+    /* M43: textarea 适配（v2.38） */
+    resize: none;
+    line-height: 1.4;
+    font-family: inherit;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.chat-input.expanded {
+    min-height: 120px;
 }
 
 .chat-input:focus {

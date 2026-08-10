@@ -817,6 +817,44 @@ async function runTests() {
   } catch (e) { fail('无效 token', e.message); }
 
   // ─────────────────────────────────────
+  // 24.5 定时发送（M43 v2.38）
+  // ─────────────────────────────────────
+  section('⏰ 24.5 定时发送');
+
+  // 确保 Bob 在私密频道（前面测试可能改变过频道状态）
+  try {
+    const users = waitFor(bob, 'room-users');
+    bob.emit('join-channel', { channelId: privateChannelId, password: 'pass123' });
+    await users;
+    await new Promise(r => setTimeout(r, 300));
+  } catch (e) { fail('24.5 准备', e.message); }
+
+  // Bob 在当前频道（私密频道）定时发消息 → 收到 schedule-confirmed
+  try {
+    const confirmed = waitFor(bob, 'schedule-confirmed');
+    bob.emit('schedule-message', { message: '定时消息测试', type: 'text', delayMs: 1500 });
+    const c = await confirmed;
+    if (c.channelId === privateChannelId && c.at > Date.now()) ok('定时发送登记: schedule-confirmed');
+    else fail('定时发送登记', JSON.stringify(c));
+  } catch (e) { fail('定时发送登记', e.message); }
+
+  // 到点后收到 chat-message（服务端投递，不依赖发送者存活）
+  try {
+    const msg = waitFor(alice, 'chat-message', 4000);
+    const m = await msg;
+    if (m.message === '定时消息测试') ok('定时消息到点投递: Alice 收到 chat-message');
+    else fail('定时消息投递', `message=${m.message}`);
+  } catch (e) { fail('定时消息投递', e.message); }
+
+  // 无效延迟被拒（delayMs 太小/太大）
+  try {
+    bob.emit('schedule-message', { message: 'x', type: 'text', delayMs: 100 });
+    const rejected = await noEvent(bob, 'schedule-confirmed', 1200);
+    if (rejected) ok('非法延迟被拒: delayMs=100 < 1000');
+    else fail('非法延迟', 'delayed event fired');
+  } catch (e) { fail('非法延迟', e.message); }
+
+  // ─────────────────────────────────────
   // 25. 加入不存在的频道
   // ─────────────────────────────────────
   section('🚫 25. join-error');
@@ -1088,10 +1126,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=31') && html.includes('style.css?v=29')) {
-      ok('缓存破坏: index.html app.js?v=31 + style.css?v=29');
+    if (html.includes('app.js?v=32') && html.includes('style.css?v=30')) {
+      ok('缓存破坏: index.html app.js?v=32 + style.css?v=30');
     } else {
-      fail('缓存破坏', 'app.js?v=31 / style.css?v=29 未找到');
+      fail('缓存破坏', 'app.js?v=32 / style.css?v=30 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1432,11 +1470,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.37: style.css v29 / app.js v31）
-    if (m23Html.includes('app.js?v=31') && m23Html.includes('style.css?v=29')) {
-      ok('M25-9: 缓存破坏 v2.37 (app.js?v=31 + style.css?v=29)');
+    // M25-9: 缓存版本号递增（v2.38: style.css v30 / app.js v32）
+    if (m23Html.includes('app.js?v=32') && m23Html.includes('style.css?v=30')) {
+      ok('M25-9: 缓存破坏 v2.38 (app.js?v=32 + style.css?v=30)');
     } else {
-      fail('M25-9: 缓存版本', 'v31/v29 未找到');
+      fail('M25-9: 缓存版本', 'v32/v30 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1610,6 +1648,35 @@ async function runTests() {
       ok('M42-1: 邀请链接（生成/复制/URL自动加入）');
     } else {
       fail('M42-1: 邀请链接', '未找到 M42 实现');
+    }
+    
+    // M43-1: 输入框工具栏（v2.38）— 仿飞书输入框 7 项功能
+    // ① 表情面板（chatEmojiPanel + CHAT_EMOJIS 点击插入）
+    // ② @ 提及（chatAtPanel 列频道成员，点击插入 @名字）
+    // ③ 文字格式（chat-format-panel 粗体/斜体/删除线/行内代码包裹）
+    // ④ 清空输入（toolbarClearBtn）
+    // ⑤ 定时发送（服务端 schedule-message + schedule-confirmed）
+    // ⑥ 输入框多行展开（textarea + toolbarExpandBtn + autoResizeChatInput）
+    // ⑦ chatInput 从 input 改 textarea（Enter 发送、Shift+Enter 换行）
+    if (m23AppJs.includes('M43') &&
+        m23AppJs.includes('CHAT_EMOJIS') &&
+        m23AppJs.includes('chatEmojiPanel') &&
+        m23AppJs.includes('chatAtPanel') &&
+        m23AppJs.includes('schedule-message') &&
+        m23AppJs.includes('schedule-confirmed') &&
+        m23AppJs.includes('autoResizeChatInput') &&
+        m23Html.includes('chatToolbar') &&
+        m23Html.includes('chatEmojiPanel') &&
+        m23Html.includes('chatAtPanel') &&
+        m23Html.includes('chatSchedulePanel') &&
+        m23Html.includes('<textarea id="chatInput"') &&
+        m23Css.includes('chat-toolbar') &&
+        m23Css.includes('chat-emoji-panel') &&
+        m23Css.includes('chat-at-panel') &&
+        m23Css.includes('chat-format-panel')) {
+      ok('M43-1: 输入框工具栏（表情/@提及/格式/清空/定时发送/多行展开）');
+    } else {
+      fail('M43-1: 输入框工具栏', '未找到 M43 实现');
     }
   }
 
