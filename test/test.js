@@ -1126,10 +1126,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=32') && html.includes('style.css?v=30')) {
-      ok('缓存破坏: index.html app.js?v=32 + style.css?v=30');
+    if (html.includes('app.js?v=33') && html.includes('style.css?v=31')) {
+      ok('缓存破坏: index.html app.js?v=33 + style.css?v=31');
     } else {
-      fail('缓存破坏', 'app.js?v=32 / style.css?v=30 未找到');
+      fail('缓存破坏', 'app.js?v=33 / style.css?v=31 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1470,11 +1470,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.38: style.css v30 / app.js v32）
-    if (m23Html.includes('app.js?v=32') && m23Html.includes('style.css?v=30')) {
-      ok('M25-9: 缓存破坏 v2.38 (app.js?v=32 + style.css?v=30)');
+    // M25-9: 缓存版本号递增（v2.39: style.css v31 / app.js v33）
+    if (m23Html.includes('app.js?v=33') && m23Html.includes('style.css?v=31')) {
+      ok('M25-9: 缓存破坏 v2.39 (app.js?v=33 + style.css?v=31)');
     } else {
-      fail('M25-9: 缓存版本', 'v32/v30 未找到');
+      fail('M25-9: 缓存版本', 'v33/v31 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1677,6 +1677,28 @@ async function runTests() {
       ok('M43-1: 输入框工具栏（表情/@提及/格式/清空/定时发送/多行展开）');
     } else {
       fail('M43-1: 输入框工具栏', '未找到 M43 实现');
+    }
+    
+    // M44-1: 移动端全屏聊天页（v2.39）— 参考手机飞书
+    // ① 竖屏展开聊天 → chatPanel.mobile-fullscreen 全屏化
+    // ② 在线用户区隐藏（成员移到右上角 mobileMembersBtn）
+    // ③ 成员底部弹出面板（mobileMembersOverlay/Sheet/List）
+    // ④ 飞书风格气泡（自己 #4f6ef7 右 / 别人灰左）
+    // ⑤ 旋转时同步 fullscreen 状态（resize 监听）
+    if (m23AppJs.includes('M44') &&
+        m23AppJs.includes('mobileMembersBtn') &&
+        m23AppJs.includes('mobileMembersOverlay') &&
+        m23AppJs.includes('buildMobileMembersList') &&
+        m23AppJs.includes('mobile-fullscreen') &&
+        m23AppJs.includes('closeMobileMembersPanel') &&
+        m23Html.includes('mobileMembersBtn') &&
+        m23Html.includes('mobileMembersOverlay') &&
+        m23Css.includes('mobile-fullscreen') &&
+        m23Css.includes('mobile-members-sheet') &&
+        m23Css.includes('mobile-member-item')) {
+      ok('M44-1: 移动端全屏聊天页（飞书风格 + 成员面板 + 气泡）');
+    } else {
+      fail('M44-1: 移动端全屏聊天页', '未找到 M44 实现');
     }
   }
 

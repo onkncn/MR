@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css?v=30">
+    <link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -312,13 +312,39 @@
         <div class="chat-panel" id="chatPanel">
             <div class="chat-sheet-handle" id="chatSheetHandle"><div class="chat-sheet-handle-bar"></div></div>
             <div class="chat-header">
-                <span class="chat-title">聊天</span>
-                <span class="chat-sheet-hint" id="chatSheetHint">上滑查看更多</span>
+                <!-- M44: 返回箭头放最左（v2.39）— 飞书式导航 -->
                 <button id="chatCollapseBtn" class="chat-toggle-btn hidden" title="返回">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
                 </button>
+                <span class="chat-title">聊天</span>
+                <span class="chat-sheet-hint" id="chatSheetHint">上滑查看更多</span>
+                <!-- M44: 移动端全屏聊天页成员入口（v2.39）— 仿飞书 -->
+                <button id="mobileMembersBtn" class="chat-toggle-btn mobile-members-btn hidden" title="频道成员">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    <span class="members-badge" id="mobileMembersBadge">0</span>
+                </button>
+            </div>
+            <!-- M44: 移动端成员弹出面板（v2.39）— 全屏聊天页右上角打开 -->
+            <div class="mobile-members-overlay hidden" id="mobileMembersOverlay">
+                <div class="mobile-members-sheet" id="mobileMembersSheet">
+                    <div class="mobile-members-header">
+                        <span>频道成员</span>
+                        <button id="mobileMembersCloseBtn" class="chat-toggle-btn" title="关闭">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="mobile-members-list" id="mobileMembersList"></div>
+                </div>
             </div>
             <div class="online-users-section" id="onlineUsersSection">
                 <div class="online-users-header">
@@ -586,8 +612,8 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=32"></script>
-    <!-- M30: 版本角标（v2.38）— 方便确认手机加载的版本（排查缓存问题） -->
-    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.38</div>
+    <script src="app.js?v=33"></script>
+    <!-- M30: 版本角标（v2.39）— 方便确认手机加载的版本（排查缓存问题） -->
+    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.39</div>
 </body>
 </html>

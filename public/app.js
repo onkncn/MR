@@ -238,6 +238,13 @@ const CHAT_EMOJIS = ['😀','😂','😊','😍','😎','🤔','😅','😭','�
 const chatFileBtn = document.getElementById('chatFileBtn');
 const chatPreviewArea = document.getElementById('chatPreviewArea');
 const chatCollapseBtn = document.getElementById('chatCollapseBtn');
+// M44: 移动端全屏聊天页成员面板（v2.39）— 仿飞书
+const mobileMembersBtn = document.getElementById('mobileMembersBtn');
+const mobileMembersBadge = document.getElementById('mobileMembersBadge');
+const mobileMembersOverlay = document.getElementById('mobileMembersOverlay');
+const mobileMembersSheet = document.getElementById('mobileMembersSheet');
+const mobileMembersCloseBtn = document.getElementById('mobileMembersCloseBtn');
+const mobileMembersList = document.getElementById('mobileMembersList');
 
 const onlineUsersSection = document.getElementById('onlineUsersSection');
 const onlineUsersList = document.getElementById('onlineUsersList');
@@ -626,6 +633,19 @@ function expandMobileChat() {
     chatPanel.style.overflow = '';
     chatPanel.style.transform = '';
     chatPanel.classList.add('mobile-expanded');
+    // M44: 竖屏全屏聊天页（v2.39）— 仿飞书
+    // 竖屏：聊天面板全屏化，在线用户区隐藏（成员移到右上角入口）
+    // 横屏：保持右抽屉模式不动（保护灵动岛避让）
+    const isPortrait = window.innerWidth <= 768 && !window.matchMedia('(orientation: landscape)').matches;
+    chatPanel.classList.toggle('mobile-fullscreen', isPortrait);
+    if (isPortrait) {
+        onlineUsersSection.classList.add('hidden');
+        if (mobileMembersBtn) mobileMembersBtn.classList.remove('hidden');
+        buildMobileMembersList();
+    } else {
+        onlineUsersSection.classList.remove('hidden');
+        if (mobileMembersBtn) mobileMembersBtn.classList.add('hidden');
+    }
     // BUGFIX: M21 抽屉打开时控制栏保持显示（v2.10）
     const mainControls = document.querySelector('.main-controls');
     if (mainControls) mainControls.classList.add('drawer-open');
@@ -645,10 +665,68 @@ function expandMobileChat() {
 function collapseMobileChat() {
     if (!chatPanel.classList.contains('mobile-expanded')) return;
     chatPanel.classList.remove('mobile-expanded');
+    chatPanel.classList.remove('mobile-fullscreen');
+    // M44: 全屏聊天页关闭时同时收起成员面板 + 还原在线用户区
+    closeMobileMembersPanel();
+    onlineUsersSection.classList.remove('hidden');
+    if (mobileMembersBtn) mobileMembersBtn.classList.add('hidden');
     // BUGFIX: M21 抽屉关闭后恢复自动隐藏（v2.10）
     const mainControls = document.querySelector('.main-controls');
     if (mainControls) mainControls.classList.remove('drawer-open');
     if (chatSheetHint) chatSheetHint.textContent = '上滑查看更多';
+}
+
+// ====== M44: 移动端成员面板（v2.39）— 仿飞书 ======
+function buildMobileMembersList() {
+    mobileMembersList.innerHTML = '';
+    if (!currentChannel) return;
+    const names = new Set();
+    if (currentChannel.users) currentChannel.users.forEach(u => names.add(u));
+    names.add(userName);
+    names.forEach(name => {
+        const item = document.createElement('div');
+        item.className = 'mobile-member-item';
+        const avatar = document.createElement('span');
+        avatar.className = 'mobile-member-avatar';
+        avatar.textContent = name.charAt(0).toUpperCase();
+        const label = document.createElement('span');
+        label.className = 'mobile-member-name';
+        label.textContent = name + (name === userName ? '（你）' : '');
+        item.appendChild(avatar);
+        item.appendChild(label);
+        mobileMembersList.appendChild(item);
+    });
+    mobileMembersBadge.textContent = names.size;
+}
+
+function openMobileMembersPanel() {
+    buildMobileMembersList();
+    mobileMembersOverlay.classList.remove('hidden');
+    requestAnimationFrame(() => mobileMembersSheet.classList.add('open'));
+}
+
+function closeMobileMembersPanel() {
+    mobileMembersOverlay.classList.add('hidden');
+    mobileMembersSheet.classList.remove('open');
+}
+
+if (mobileMembersBtn) {
+    mobileMembersBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (mobileMembersOverlay.classList.contains('hidden')) {
+            openMobileMembersPanel();
+        } else {
+            closeMobileMembersPanel();
+        }
+    });
+}
+if (mobileMembersCloseBtn) {
+    mobileMembersCloseBtn.addEventListener('click', closeMobileMembersPanel);
+}
+if (mobileMembersOverlay) {
+    mobileMembersOverlay.addEventListener('click', (e) => {
+        if (e.target === mobileMembersOverlay) closeMobileMembersPanel();
+    });
 }
 
 // 控制栏聊天按钮：展开聊天面板
@@ -4766,6 +4844,19 @@ window.addEventListener('orientationchange', () => {
 window.addEventListener('resize', () => {
     const isMobile = window.innerWidth <= 768;
     if (isMobile) updateOrientationBtnIcon();
+    // M44: 旋转时同步全屏聊天页状态（v2.39）
+    if (chatPanel && chatPanel.classList.contains('mobile-expanded')) {
+        const isPortrait = window.innerWidth <= 768 && !window.matchMedia('(orientation: landscape)').matches;
+        chatPanel.classList.toggle('mobile-fullscreen', isPortrait);
+        if (isPortrait) {
+            onlineUsersSection.classList.add('hidden');
+            if (mobileMembersBtn) mobileMembersBtn.classList.remove('hidden');
+        } else {
+            onlineUsersSection.classList.remove('hidden');
+            if (mobileMembersBtn) mobileMembersBtn.classList.add('hidden');
+            closeMobileMembersPanel();
+        }
+    }
 });
 // 初始更新
 setTimeout(updateOrientationBtnIcon, 500);
