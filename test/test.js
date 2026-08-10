@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=29') && html.includes('style.css?v=27')) {
-      ok('缓存破坏: index.html app.js?v=29 + style.css?v=27');
+    if (html.includes('app.js?v=30') && html.includes('style.css?v=28')) {
+      ok('缓存破坏: index.html app.js?v=30 + style.css?v=28');
     } else {
-      fail('缓存破坏', 'app.js?v=29 / style.css?v=27 未找到');
+      fail('缓存破坏', 'app.js?v=30 / style.css?v=28 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.35: style.css v27 / app.js v29）
-    if (m23Html.includes('app.js?v=29') && m23Html.includes('style.css?v=27')) {
-      ok('M25-9: 缓存破坏 v2.35 (app.js?v=29 + style.css?v=27)');
+    // M25-9: 缓存版本号递增（v2.36: style.css v28 / app.js v30）
+    if (m23Html.includes('app.js?v=30') && m23Html.includes('style.css?v=28')) {
+      ok('M25-9: 缓存破坏 v2.36 (app.js?v=30 + style.css?v=28)');
     } else {
-      fail('M25-9: 缓存版本', 'v29/v27 未找到');
+      fail('M25-9: 缓存版本', 'v30/v28 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1503,6 +1503,25 @@ async function runTests() {
       ok('M39-1: 语音检测实现（AnalyserNode 检测 + speaking-status 广播 + 高亮）');
     } else {
       fail('M39-1: 语音检测', '未找到 M39 实现');
+    }
+    
+    // M40-1: 频道取消自动删除（v2.36）— P1-5 服务端 channel-delete-cancelled 前端实现
+    // 服务端已有删除计时器机制（频道空→启动+广播 pendingDelete；有人加入→取消+广播
+    // channel-delete-cancelled），但前端零监听、零 UI。
+    // 实现: 1) 服务端新增 cancel-channel-delete 事件（房主主动取消）；
+    //       2) 频道列表显示「即将删除」红色标记 + 倒计时（pendingDelete + deleteAt）；
+    //       3) 右键菜单加「取消自动删除」（仅房主 + pendingDelete 时显示）；
+    //       4) 监听 channel-delete-cancelled 刷新列表并清理倒计时。
+    if (m23AppJs.includes('M40') &&
+        m23AppJs.includes('ctxCancelDelete') &&
+        m23AppJs.includes('cancel-channel-delete') &&
+        m23AppJs.includes("socket.on('channel-delete-cancelled'") &&
+        m23AppJs.includes('scheduleDeleteCountdown') &&
+        m23Css.includes('channel-delete-tag') &&
+        m23Html.includes('ctxCancelDelete')) {
+      ok('M40-1: 频道取消自动删除（标记 + 倒计时 + 右键取消 + 监听刷新）');
+    } else {
+      fail('M40-1: 频道取消删除', '未找到 M40 实现');
     }
   }
 

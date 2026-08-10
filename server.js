@@ -744,6 +744,29 @@ io.on('connection', (socket) => {
     }
   });
 
+  // M40: 取消自动删除（v2.36）— 房主主动取消，或任何人加入时也会取消（见 join-channel）
+  socket.on('cancel-channel-delete', (channelId) => {
+    if (!channels.has(channelId)) return;
+    const channel = channels.get(channelId);
+    // 仅房主可主动取消自动删除
+    if (channel.owner !== socket.username) return;
+    if (deleteTimers.has(channelId)) {
+      clearTimeout(deleteTimers.get(channelId));
+      deleteTimers.delete(channelId);
+      console.log(`用户 ${socket.username} 取消频道 ${channel.name} (${channelId}) 的自动删除`);
+      io.emit('channel-delete-cancelled', channelId);
+      io.emit('channel-updated', {
+        id: channelId,
+        name: channel.name,
+        users: Array.from(channel.users),
+        hasPassword: !!channel.password,
+        owner: channel.owner,
+        personTime: channel.personTime || 0,
+        pendingDelete: false
+      });
+    }
+  });
+
   socket.on('disconnect', () => {
     // P1: 从用户索引中清理
     if (socket.username) {

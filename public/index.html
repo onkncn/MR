@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>语音频道</title>
-    <link rel="stylesheet" href="style.css?v=27">
+    <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
     <div id="lobby" class="lobby">
@@ -399,6 +399,14 @@
             </svg>
             <span>删除频道</span>
         </div>
+        <!-- M40: 取消自动删除（v2.36）— 仅房主 + 频道 pendingDelete 时显示 -->
+        <div class="channel-context-item" id="ctxCancelDelete">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 4v6h6"></path>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+            <span>取消自动删除</span>
+        </div>
     </div>
 
     <div id="createModal" class="modal hidden">
@@ -466,8 +474,8 @@
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=29"></script>
-    <!-- M30: 版本角标（v2.35）— 方便确认手机加载的版本（排查缓存问题） -->
-    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.35</div>
+    <script src="app.js?v=30"></script>
+    <!-- M30: 版本角标（v2.36）— 方便确认手机加载的版本（排查缓存问题） -->
+    <div id="appVersionTag" style="position:fixed;right:8px;bottom:100px;font-size:10px;color:rgba(255,255,255,0.4);background:rgba(0,0,0,0.35);padding:2px 7px;border-radius:4px;z-index:400;pointer-events:none;font-family:monospace;">v2.36</div>
 </body>
 </html>

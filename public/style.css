@@ -386,6 +386,29 @@ body {
     flex-shrink: 0;
 }
 
+/* M40: 频道即将自动删除标记（v2.36） */
+.channel-item.pending-delete {
+    border-left: 3px solid #f04747;
+}
+.channel-delete-tag {
+    font-size: 10px;
+    color: #f04747;
+    background: rgba(240, 71, 71, 0.15);
+    border: 1px solid rgba(240, 71, 71, 0.4);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.channel-delete-countdown {
+    font-size: 10px;
+    color: #f04747;
+    font-family: monospace;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
 /* 频道内参与者头像行（桌面端侧边栏） */
 .channel-participants {
     display: flex;

@@ -223,6 +223,7 @@ const channelContextMenu = document.getElementById('channelContextMenu');
 const ctxRename = document.getElementById('ctxRename');
 const ctxJoin = document.getElementById('ctxJoin');
 const ctxDelete = document.getElementById('ctxDelete');
+const ctxCancelDelete = document.getElementById('ctxCancelDelete'); // M40
 
 let micVolume = 1;
 let speakerVolume = 1;
@@ -2098,6 +2099,22 @@ function updateChannelList() {
         `;
         nameRow.querySelector('.channel-item-name').textContent = channel.name;
         nameRow.querySelector('.user-count').textContent = channel.users ? channel.users.length : 0;
+        // M40: 频道即将自动删除标记（v2.36）
+        if (channel.pendingDelete) {
+            const delTag = document.createElement('span');
+            delTag.className = 'channel-delete-tag';
+            delTag.textContent = '即将删除';
+            nameRow.appendChild(delTag);
+            item.classList.add('pending-delete');
+            // 倒计时显示
+            if (channel.deleteAt) {
+                const countdown = document.createElement('span');
+                countdown.className = 'channel-delete-countdown';
+                countdown.textContent = '';
+                nameRow.appendChild(countdown);
+                scheduleDeleteCountdown(channel.id, channel.deleteAt, countdown);
+            }
+        }
         item.appendChild(nameRow);
         
         // 活跃频道下显示参与者列表
@@ -2195,6 +2212,30 @@ function updateChannelList() {
     channelListEl.appendChild(fragment);
 }
 
+// M40: 频道删除倒计时（v2.36）— 每秒刷新剩余时间
+const deleteCountdownTimers = new Map(); // channelId -> { interval, el }
+function scheduleDeleteCountdown(channelId, deleteAt, el) {
+    // 清理旧定时器（同一频道重新渲染时）
+    const old = deleteCountdownTimers.get(channelId);
+    if (old) {
+        clearInterval(old.interval);
+        deleteCountdownTimers.delete(channelId);
+    }
+    const update = () => {
+        const remain = Math.max(0, deleteAt - Date.now());
+        const mins = Math.floor(remain / 60000);
+        const secs = Math.floor((remain % 60000) / 1000);
+        el.textContent = `${mins}分${secs.toString().padStart(2, '0')}秒`;
+        if (remain <= 0) {
+            clearInterval(oldInterval);
+            deleteCountdownTimers.delete(channelId);
+        }
+    };
+    const oldInterval = setInterval(update, 1000);
+    deleteCountdownTimers.set(channelId, { interval: oldInterval, el });
+    update();
+}
+
 // 右键菜单相关函数
 function showContextMenu(channel, x, y) {
     contextMenuChannel = channel;
@@ -2206,6 +2247,9 @@ function showContextMenu(channel, x, y) {
     ctxJoin.style.display = (!currentChannel || currentChannel.id !== channel.id) ? '' : 'none';
     // BUGFIX: L1 非房主隐藏删除按钮
     ctxDelete.style.display = (channel.owner === userName) ? '' : 'none';
+    // M40: 取消自动删除 — 仅房主 + 频道处于待删除状态（pendingDelete）时显示
+    ctxCancelDelete.style.display =
+        (channel.owner === userName && channel.pendingDelete) ? '' : 'none';
 }
 
 function hideContextMenu() {
@@ -2234,6 +2278,14 @@ ctxDelete.addEventListener('click', () => {
         if (confirm(`确定删除频道「${contextMenuChannel.name}」？`)) {
             socket.emit('delete-channel', contextMenuChannel.id);
         }
+    }
+    hideContextMenu();
+});
+
+// M40: 取消自动删除（v2.36）
+ctxCancelDelete.addEventListener('click', () => {
+    if (contextMenuChannel) {
+        socket.emit('cancel-channel-delete', contextMenuChannel.id);
     }
     hideContextMenu();
 });
@@ -4459,12 +4511,18 @@ socket.on('channel-created', (channel) => {
 socket.on('channel-updated', (channel) => {
     const idx = channelList.findIndex(ch => ch.id === channel.id);
     if (idx >= 0) {
+        const wasPending = channelList[idx].pendingDelete;
         channelList[idx] = channel;
         if (currentChannel && currentChannel.id === channel.id) {
             currentChannel.name = channel.name;
             currentChannelName.textContent = channel.name;
         }
         updateChannelList();
+        // M40: 删除计时器取消时清理倒计时
+        if (wasPending && !channel.pendingDelete) {
+            const t = deleteCountdownTimers.get(channel.id);
+            if (t) { clearInterval(t.interval); deleteCountdownTimers.delete(channel.id); }
+        }
     }
 });
 
@@ -4477,6 +4535,22 @@ socket.on('channel-deleted', (channelId) => {
         }
         updateChannelList();
     }
+    // M40: 频道删除后清理倒计时定时器
+    const t = deleteCountdownTimers.get(channelId);
+    if (t) { clearInterval(t.interval); deleteCountdownTimers.delete(channelId); }
+});
+
+socket.on('channel-delete-cancelled', (channelId) => {
+    // M40: 频道自动删除已取消（有人加入或房主主动取消）— 刷新列表状态
+    const idx = channelList.findIndex(ch => ch.id === channelId);
+    if (idx >= 0) {
+        channelList[idx].pendingDelete = false;
+        channelList[idx].deleteAt = undefined;
+        updateChannelList();
+    }
+    // 清理倒计时定时器
+    const t = deleteCountdownTimers.get(channelId);
+    if (t) { clearInterval(t.interval); deleteCountdownTimers.delete(channelId); }
 });
 
 socket.on('user-connected', async (data) => {
