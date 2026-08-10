@@ -1036,10 +1036,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=26') && html.includes('style.css?v=25')) {
-      ok('缓存破坏: index.html app.js?v=26 + style.css?v=25');
+    if (html.includes('app.js?v=26') && html.includes('style.css?v=26')) {
+      ok('缓存破坏: index.html app.js?v=26 + style.css?v=26');
     } else {
-      fail('缓存破坏', 'app.js?v=26 / style.css?v=25 未找到');
+      fail('缓存破坏', 'app.js?v=26 / style.css?v=26 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1380,11 +1380,11 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.31: style.css v25 / app.js v26）
-    if (m23Html.includes('app.js?v=26') && m23Html.includes('style.css?v=25')) {
-      ok('M25-9: 缓存破坏 v2.31 (app.js?v=26 + style.css?v=25)');
+    // M25-9: 缓存版本号递增（v2.32: style.css v26 / app.js v26）
+    if (m23Html.includes('app.js?v=26') && m23Html.includes('style.css?v=26')) {
+      ok('M25-9: 缓存破坏 v2.32 (app.js?v=26 + style.css?v=26)');
     } else {
-      fail('M25-9: 缓存版本', 'v26/v25 未找到');
+      fail('M25-9: 缓存版本', 'v26/v26 未找到');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1442,25 +1442,24 @@ async function runTests() {
       fail('M35-3: 竖屏音量滑块', '未找到 M35-3 逻辑');
     }
     
-    // M36-1: iPhone 灵动岛横屏适配（v2.31 修正）
+    // M36-1: iPhone 灵动岛横屏适配（v2.32 按用户反馈精修）
     // 根因: 灵动岛横屏时旋转到屏幕左侧/右侧（垂直条状 126.6×37pt），
     //       只覆盖屏幕高度中间 1/3（y≈133~260pt）。
     //       env(safe-area-inset-left/right) 返回整条侧边 59px 是保守值。
     // v2.30 曾对全部贴边元素加 env() 避让（过度适配，被用户否决）。
-    // v2.31 修正: 只对全高贴边容器（左抽屉/右抽屉）避让；
-    //       顶部按钮组/底部胶囊/参与者条/共享条不在灵动岛段，保持原布局。
+    // v2.31 曾对两个抽屉整体偏移（用户反馈头像/标题也被挪了）。
+    // v2.32 精修: 只给频道列表项 #channelList 加安全区 padding；
+    //       头像/退出/标题在顶部（y<133pt）保持原位；
+    //       聊天面板完全不适配（用户明确要求）。
     if (m23Css.includes('M36') &&
-        m23Css.includes('.sidebar-left') &&
-        m23Css.includes('.chat-panel') &&
+        m23Css.includes('#channelList') &&
         m23Css.includes('padding-left: env(safe-area-inset-left') &&
-        m23Css.includes('padding-right: env(safe-area-inset-right') &&
-        // 关键：不得再对底部胶囊做整体左右挪移（screen-share-wrapper 等
-        // 是基础样式固有类名，不能全局否定，只检查过度规则 max-width 不残留）
-        !m23Css.includes('.main-controls {\n            max-width: calc(92vw - env') &&
-        !m23Css.includes('participants-container {\n            left: env(safe-area-inset-left')) {
-      ok('M36-1: 灵动岛横屏适配（仅抽屉避让，顶部/底部元素不整体挪动）');
+        // 关键：sidebar-left / chat-panel 均不得整体偏移
+        !m23Css.includes('.sidebar-left {\n            padding-left: env(safe-area-inset-left') &&
+        !m23Css.includes('.chat-panel {\n            padding-right: env(safe-area-inset-right')) {
+      ok('M36-1: 灵动岛横屏适配（仅频道列表项避让，头像/标题/聊天栏原位）');
     } else {
-      fail('M36-1: 灵动岛适配', '未找到 v2.31 精确适配规则');
+      fail('M36-1: 灵动岛适配', '未找到 v2.32 精修规则');
     }
   }
 
