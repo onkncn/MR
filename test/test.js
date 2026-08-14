@@ -34,10 +34,19 @@ function waitFor(s, event, timeout = 3000) {
   });
 }
 
-function noEvent(s, event, timeout = 1500) {
+// noEvent：在 timeout 内确认"没有收到匹配的事件"。
+// predicate 可选：只对匹配的事件判负。用例之间可能残留同事件名的其他数据
+// （例如 mute-user 是频道广播，Bob 的事件 Alice 也会收到），不加谓词会误判。
+function noEvent(s, event, predicate, timeout = 1500) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(true), timeout);
-    s.once(event, () => { clearTimeout(timer); resolve(false); });
+    const handler = (data) => {
+      if (predicate && !predicate(data)) return; // 不匹配的事件忽略，继续等
+      clearTimeout(timer);
+      s.off(event, handler);
+      resolve(false);
+    };
+    const timer = setTimeout(() => { s.off(event, handler); resolve(true); }, timeout);
+    s.on(event, handler);
   });
 }
 
@@ -489,9 +498,14 @@ async function runTests() {
   } catch (e) { fail('取消静音', e.message); }
 
   // 非管理员不能静音
+  // BUGFIX: 无谓词过滤时此用例与前面用例有时序依赖 — mute-user 是频道广播
+  // （Bob 的事件 Alice 也会收到），若前面"取消静音"的 user-muted{Bob,false}
+  // 事件晚到，noEvent 会误判 Alice 被静音 → 测试失败。
+  // 修复：谓词只匹配 Alice 被静音（user==='Alice' && muted===true），跨用例事件完全忽略。
   try {
     bob.emit('mute-user', { channelId: privateChannelId, targetUser: 'Alice' }); // Bob 尝试静音 Alice
-    const rejected = await noEvent(alice, 'user-muted');
+    const rejected = await noEvent(alice, 'user-muted',
+      (d) => d && d.user === 'Alice' && d.muted === true);
     if (rejected) ok('非管理员静音被拒绝');
     else fail('非管理员静音', '非管理员成功静音了别人');
   } catch (e) { fail('非管理员静音', e.message); }
@@ -1126,10 +1140,10 @@ async function runTests() {
     
     // index.html 缓存破坏版本号
     const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf-8');
-    if (html.includes('app.js?v=33') && html.includes('style.css?v=31')) {
-      ok('缓存破坏: index.html app.js?v=33 + style.css?v=31');
+    if (html.includes('app.js?v=56') && html.includes('style.css?v=46')) {
+      ok('缓存破坏: index.html app.js?v=56 + style.css?v=46');
     } else {
-      fail('缓存破坏', 'app.js?v=33 / style.css?v=31 未找到');
+      fail('缓存破坏', 'app.js?v=56 / style.css?v=46 未找到');
     }
     
     // M16/M22 移动端控制栏自动隐藏：断点与 CSS 横屏 1024px 对齐
@@ -1470,11 +1484,29 @@ async function runTests() {
       fail('M33-2: 侧边栏修正', '未找到 M33 v2.27 规则');
     }
     
-    // M25-9: 缓存版本号递增（v2.39: style.css v31 / app.js v33）
-    if (m23Html.includes('app.js?v=33') && m23Html.includes('style.css?v=31')) {
-      ok('M25-9: 缓存破坏 v2.39 (app.js?v=33 + style.css?v=31)');
+    // M25-9: 缓存版本号递增（v2.66: style.css v46 / app.js v56）
+    if (m23Html.includes('app.js?v=56') && m23Html.includes('style.css?v=46')) {
+      ok('M25-9: 缓存破坏 v2.66 (app.js?v=56 + style.css?v=46)');
     } else {
-      fail('M25-9: 缓存版本', 'v33/v31 未找到');
+      fail('M25-9: 缓存版本', 'v56/v46 未找到');
+    }
+
+    // M71-1: 被@通知提醒（v2.66）— 消息高亮 + 标签 + 角标 + toast + 浏览器通知
+    if (m23AppJs.includes('M71') &&
+        m23AppJs.includes('function isMentioningMe') &&
+        m23AppJs.includes('showMentionToast') &&
+        m23AppJs.includes('new Notification') &&
+        m23AppJs.includes('bumpMentionBadge') &&
+        m23AppJs.includes('clearMentionBadge') &&
+        m23AppJs.includes('requestMentionPermission') &&
+        m23AppJs.includes("msgEl.classList.add('mention-me')") &&
+        m23Html.includes('id="mentionBadge"') &&
+        m23Css.includes('M71') &&
+        m23Css.includes('.chat-message.mention-me .chat-message-content') &&
+        m23Css.includes('.mention-badge')) {
+      ok('M71-1: 被@通知提醒（高亮+标签+角标+toast+浏览器通知+权限请求）');
+    } else {
+      fail('M71-1: 被@通知提醒', '未找到 M71 完整实现');
     }
     
     // M34-1: 横竖屏切换按钮不可用修复（v2.28）
@@ -1699,6 +1731,271 @@ async function runTests() {
       ok('M44-1: 移动端全屏聊天页（飞书风格 + 成员面板 + 气泡）');
     } else {
       fail('M44-1: 移动端全屏聊天页', '未找到 M44 实现');
+    }
+
+    // M45-1: 键盘避让 + 图片按钮并入工具栏（v2.40）
+    // ① 竖屏全屏聊天输入框聚焦时按 visualViewport 收缩面板（防键盘遮挡）
+    // ② 图片按钮移入工具栏按钮行（chatFileBtn 在 chatToolbar 内）
+    // ③ 按钮顺序对齐飞书默认输入栏：表情→@→图片→格式→清空→定时→展开
+    const toolbarIdx = (id) => m23Html.indexOf(id);
+    const emojiIdx = toolbarIdx('toolbarEmojiBtn');
+    const atIdx = toolbarIdx('toolbarAtBtn');
+    const fileIdx = toolbarIdx('chatFileBtn');
+    const formatIdx = toolbarIdx('toolbarFormatBtn');
+    const clearIdx = toolbarIdx('toolbarClearBtn');
+    const scheduleIdx = toolbarIdx('toolbarScheduleBtn');
+    const expandIdx = toolbarIdx('toolbarExpandBtn');
+    const inOrder = emojiIdx !== -1 && atIdx !== -1 && fileIdx !== -1 && formatIdx !== -1 &&
+      clearIdx !== -1 && scheduleIdx !== -1 && expandIdx !== -1 &&
+      emojiIdx < atIdx && atIdx < fileIdx && fileIdx < formatIdx &&
+      formatIdx < clearIdx && clearIdx < scheduleIdx && scheduleIdx < expandIdx;
+    const fileInToolbar = m23Html.indexOf('chatFileBtn') > m23Html.indexOf('<div class="chat-toolbar') &&
+      m23Html.indexOf('chatFileBtn') < m23Html.indexOf('</div>\n                <textarea id="chatInput"');
+    if (m23AppJs.includes('M45') &&
+        m23AppJs.includes('syncChatKeyboardViewport') &&
+        m23AppJs.includes("visualViewport.addEventListener('resize'") &&
+        m23AppJs.includes('focusin') &&
+        m23AppJs.includes('.chat-input-area') &&
+        m23Css.includes('.chat-toolbar .chat-file-btn') &&
+        fileInToolbar && inOrder) {
+      ok('M45-1: 键盘避让（visualViewport 收缩）+ 图片按钮并入工具栏（飞书顺序）');
+    } else {
+      fail('M45-1: 键盘避让/工具栏顺序', '未找到 M45 实现或按钮顺序不符');
+    }
+
+    // M46-1: 底部安全区兜底（v2.41）— 安卓/微信 WebView env()=0 时输入栏贴底被手势条裁切
+    // ① CSS 用 padding-bottom: calc(... + env(safe-area-inset-bottom)) 替代 margin 方式
+    // ② JS 检测 env 未生效（padding-bottom 不足）时手动补 30px 底部间距
+    if (m23AppJs.includes('M46') &&
+        m23AppJs.includes('applySafeAreaBottom') &&
+        m23AppJs.includes("area.style.paddingBottom = '30px'") &&
+        m23AppJs.includes('SAFE_AREA_THRESHOLD') &&
+        m23Css.includes('padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px))') &&
+        !m23Css.includes('margin-bottom: env(safe-area-inset-bottom, 0px)')) {
+      ok('M46-1: 底部安全区兜底（env()=0 安卓兜底 30px）');
+    } else {
+      fail('M46-1: 底部安全区兜底', '未找到 M46 实现');
+    }
+
+    // M47-1: 竖屏聊天面板全屏加固（v2.42）— 防"聊天框在画布下方"
+    // ① 竖屏判断改用宽高比（innerHeight>innerWidth），兼容安卓 WebView orientation 误报
+    // ② expand/collapse/resize 全路径清理键盘避让残留内联高度（防面板卡在部分高度）
+    // ③ 键盘避让对 bottom sheet/抽屉展开态同样生效（面板锚定可视区顶部）
+    if (m23AppJs.includes('M47') &&
+        m23AppJs.includes('window.innerHeight > window.innerWidth') &&
+        m23AppJs.includes('chatPanel.style.minHeight = \'\'') &&
+        m23AppJs.includes('chatPanel.style.maxHeight = \'\'') &&
+        m23AppJs.includes("chatPanel.style.bottom = 'auto'") &&
+        m23AppJs.includes("typeof syncChatKeyboardViewport === 'function'") &&
+        !m23AppJs.includes("!window.matchMedia('(orientation: landscape)').matches")) {
+      ok('M47-1: 竖屏全屏加固（宽高比判断 + 残留清理 + 键盘避让全覆盖）');
+    } else {
+      fail('M47-1: 竖屏全屏加固', '未找到 M47 实现');
+    }
+
+    // M48-1: 面板高度始终跟随可视视口（v2.43；v2.57 回退后恢复 height=vv）
+    // ① iOS Safari viewport-fit=cover 下 height:100% 基于含地址栏的布局视口 → 输入栏沉底；
+    //    改为面板高度恒等于 visualViewport.height（键盘/地址栏都会压缩可视区）
+    // ② viewport meta 加 interactive-widget=resizes-content（安卓键盘弹出时布局视口自动收缩）
+    // ③ expandMobileChat 展开时立即同步，不等 resize 事件
+    if (m23AppJs.includes('M48') &&
+        m23AppJs.includes('window.innerWidth <= 1024') &&
+        m23AppJs.includes('chatPanel.style.height = vv.height + \'px\'') &&
+        !m23AppJs.includes('kbShown = isChatInputActive()') &&
+        m23Html.includes('interactive-widget=resizes-content') &&
+        m23AppJs.includes('展开后立即同步面板高度')) {
+      ok('M48-1: 面板高度跟随可视视口（iOS/安卓地址栏 + 键盘全覆盖）');
+    } else {
+      fail('M48-1: 面板高度跟随可视视口', '未找到 M48 实现');
+    }
+
+    // M49-1: 移动端工具栏移到输入框下方（v2.44）— 对齐飞书"输入框在上、工具栏贴键盘"布局
+    if (m23Css.includes('M49') &&
+        m23Css.includes('.chat-input-area .chat-input') &&
+        m23Css.includes('order: 4') &&
+        m23Css.includes('.chat-input-area .chat-toolbar') &&
+        m23Css.includes('order: 5')) {
+      ok('M49-1: 移动端工具栏移至输入框下方（对齐飞书）');
+    } else {
+      fail('M49-1: 移动端工具栏位置', '未找到 M49 order 规则');
+    }
+
+    // M50-1: 键盘弹出时强制面板全屏覆盖主内容区（v2.45）— 修复"共享视频露出来"
+    // ① ensureChatPanelFullscreen：任何路径展开 + 竖屏 → 补 mobile-fullscreen
+    // ② collapseMobileChat 收起时 blur 输入框（防键盘残留，主界面+键盘露出共享视频）
+    // ③ focusin/resize 独立绑定 ensure（即使 visualViewport 不存在也生效）
+    if (m23AppJs.includes('M50') &&
+        m23AppJs.includes('ensureChatPanelFullscreen') &&
+        m23AppJs.includes("chatPanel.classList.add('mobile-fullscreen')") &&
+        m23AppJs.includes('.chat-input-area') &&
+        m23AppJs.includes('activeEl.blur()') &&
+        m23AppJs.includes("document.addEventListener('focusin', ensureChatPanelFullscreen)")) {
+      ok('M50-1: 键盘弹出强制全屏（防共享视频露出）+ 收起关键盘');
+    } else {
+      fail('M50-1: 键盘弹出强制全屏', '未找到 M50 实现');
+    }
+
+    // M51-1: 全屏聊天面板 z-index 400（v2.46）— 汉堡菜单 z-index 300 挡返回按钮
+    // 根因：sidebar-toggle z-index 300 > 面板 200 → 返回按钮被汉堡盖住点不到
+    if (m23Css.includes('M51') &&
+        m23Css.includes('.chat-panel.mobile-fullscreen') &&
+        m23Css.includes('z-index: 400;')) {
+      ok('M51-1: 全屏聊天面板 z-index 400（盖过汉堡 300，返回按钮可点）');
+    } else {
+      fail('M51-1: 面板 z-index 层级', '未找到 M51 z-index 400');
+    }
+
+    // M52-1: 键盘动画结束后延迟重同步面板高度（v2.47）
+    // 防止键盘弹出动画中间态 vv 被捕获 → 面板卡小高度 → 工具栏浮顶/共享视频露出
+    if (m23AppJs.includes('M52') &&
+        m23AppJs.includes('kbSettleTimer') &&
+        m23AppJs.includes('setTimeout(() => {') &&
+        m23AppJs.includes('}, 400)')) {
+      ok('M52-1: 键盘动画结束延迟重同步面板高度');
+    } else {
+      fail('M52-1: 键盘动画重同步', '未找到 M52 延迟重同步');
+    }
+
+    // M53-1: 键盘弹出时面板 z-index 500 + 锁定滚动（v2.48，M54 起用 lockBodyScroll）
+    // 终极兜底：无论面板状态/模式，键盘弹出时强制面板盖过共享视频
+    if (m23AppJs.includes('M53') &&
+        m23AppJs.includes("chatPanel.style.zIndex = '500'") &&
+        m23AppJs.includes('lockBodyScroll()') &&
+        m23AppJs.includes("chatPanel.style.zIndex = ''")) {
+      ok('M53-1: 键盘弹出强制面板 z-index 500 + 锁定滚动');
+    } else {
+      fail('M53-1: 键盘弹出强制覆盖', '未找到 M53 zIndex/lockBodyScroll');
+    }
+
+    // M54-1: 键盘弹出防滚动（v2.49，v2.51 改 html overflow 锁滚动）
+    // M65: scrollTo(0,0) 已移除（v2.60）— 与 M64 offsetTop 补偿冲突造成标题瞬移竞态，
+    // 防滚动核心是 html overflow 锁定，scrollTo 不再需要（M65-1 单独断言其移除）。
+    if (m23AppJs.includes('M54') &&
+        m23AppJs.includes('function lockBodyScroll') &&
+        m23AppJs.includes("document.documentElement.style.overflow = 'hidden'") &&
+        m23AppJs.includes('function unlockBodyScroll')) {
+      ok('M54-1: 键盘弹出防滚动（html overflow 锁定）');
+    } else {
+      fail('M54-1: 键盘弹出防滚动', '未找到 M54 lockBodyScroll');
+    }
+
+    // M56-1: 输入框聚焦时强制展开面板（v2.51）— 终极保险
+    if (m23AppJs.includes('M56') &&
+        m23AppJs.includes('function forceChatPanelOpenOnFocus') &&
+        m23AppJs.includes("chatPanel.classList.add('mobile-expanded')") &&
+        m23AppJs.includes("document.addEventListener('focusin', forceChatPanelOpenOnFocus)")) {
+      ok('M56-1: 输入框聚焦强制展开面板（终极保险）');
+    } else {
+      fail('M56-1: 输入框聚焦强制展开', '未找到 M56');
+    }
+
+    // M57-1: 收起态面板强制高度 100%（v2.52）— CSS !important 防 inline 残留
+    // 键盘避让残留 inline height 让 translateY(100%) 收起不彻底 → 面板部分显示在顶部
+    if (m23Css.includes('M57') &&
+        m23Css.includes('.chat-panel:not(.mobile-expanded)') &&
+        m23Css.includes('height: 100% !important;') &&
+        m23Css.includes('bottom: 0 !important;')) {
+      ok('M57-1: 收起态强制高度 100%（防面板残留在屏幕顶部）');
+    } else {
+      fail('M57-1: 收起态强制高度', '未找到 M57 !important 规则');
+    }
+
+    // M58-1: 键盘弹出时隐藏主内容区（v2.53）— 输入法工具条半透明透出共享视频
+    if (m23AppJs.includes('M58') &&
+        m23AppJs.includes('function hideMainContentOnKb') &&
+        m23AppJs.includes('.current-channel') &&
+        m23AppJs.includes("mc.style.display = 'none'") &&
+        m23AppJs.includes('showMainContentOnKbClose')) {
+      ok('M58-1: 键盘弹出隐藏主内容区（防工具条透出共享视频）');
+    } else {
+      fail('M58-1: 键盘弹出隐藏主内容区', '未找到 M58');
+    }
+
+    // M59-1: 收起面板时恢复主内容区 + 共享视频播放（v2.54）
+    if (m23AppJs.includes('M59') &&
+        m23AppJs.includes('showMainContentOnKbClose();') &&
+        m23AppJs.includes("sv.play().catch(() => {})")) {
+      ok('M59-1: 收起面板恢复主内容区 + 共享视频播放');
+    } else {
+      fail('M59-1: 收起面板恢复主内容区', '未找到 M59');
+    }
+
+    // M60-1: 键盘收起后延迟恢复主内容区（v2.55）— 防布局跳变动画
+    if (m23AppJs.includes('M60') &&
+        m23AppJs.includes('function scheduleShowMainContent') &&
+        m23AppJs.includes('kbRestoreTimer') &&
+        m23AppJs.includes('scheduleShowMainContent();')) {
+      ok('M60-1: 键盘收起延迟恢复主内容区（防跳变）');
+    } else {
+      fail('M60-1: 键盘收起延迟恢复', '未找到 M60 scheduleShowMainContent');
+    }
+
+    // M62-1: 画面回退 v2.55 逻辑（v2.57）— 撤销 M61（40% 下半部分），恢复全屏+隐藏主内容区
+    if (m23AppJs.includes('M62') &&
+        m23AppJs.includes('chatPanel.style.height = vv.height + \'px\'') &&
+        m23AppJs.includes('hideMainContentOnKb();')) {
+      ok('M62-1: 回退 v2.55 画面（全屏 + 隐藏主内容区 + 延迟恢复）');
+    } else {
+      fail('M62-1: 回退 v2.55', '未找到 M62 回退逻辑');
+    }
+
+    // M63-1: 面板高度过渡动画（v2.58）— 消除键盘弹出/收起时高度突变的跳动
+    if (m23Css.includes('M63') &&
+        m23Css.includes('.chat-panel.mobile-fullscreen') &&
+        m23Css.includes('transition: height 0.2s ease')) {
+      ok('M63-1: 面板高度过渡动画（消除跳动）');
+    } else {
+      fail('M63-1: 面板高度过渡动画', '未找到 M63 transition');
+    }
+
+    // M64-1: 历史：top 跟随 vv.offsetTop（v2.59）+ vv scroll 监听 + CSS 去 top 过渡。
+    // M67 改为锁死页面高度方案（top 固定 0），vv scroll 监听保留作为兜底，
+    // CSS 去 top 过渡保留（防滑动）。此断言只验证这些历史痕迹仍然存在。
+    if (m23AppJs.includes('M64') &&
+        m23AppJs.includes("visualViewport.addEventListener('scroll'") &&
+        m23Css.includes('M64') &&
+        !m23Css.includes('top 0.2s ease')) {
+      ok('M64-1: vv scroll 监听保留 + CSS 无 top 过渡（M67 锁高度方案的兜底）');
+    } else {
+      fail('M64-1: vv scroll 监听', '未找到 M64 遗留监听/CSS 去 top 过渡');
+    }
+
+    // M70-1: 最终方案（v2.65）— offsetTop 补偿 + rAF 循环，去掉 scrollTo。
+    // 关键认知：iOS 键盘弹出滚动的是 visual viewport（offsetTop），scrollTo 对
+    // offsetTop 无效且和补偿打架（M64/M66 失败根源）。面板 top=offsetTop 补偿
+    // → 视觉位置恒 0；同时隐藏 .main-controls 防透明键盘透出共享屏幕按钮。
+    if (m23AppJs.includes('M70') &&
+        m23AppJs.includes('(vv.offsetTop || 0) + \'px\'') &&
+        m23AppJs.includes('function startKbCompensateLoop') &&
+        m23AppJs.includes('requestAnimationFrame(tick)') &&
+        !m23AppJs.includes('window.scrollTo(0, 0)') &&
+        m23AppJs.includes('.main-controls') &&
+        m23AppJs.includes('mctrl.style.display = \'none\'')) {
+      ok('M70-1: offsetTop 补偿 + rAF 循环 + 去 scrollTo + 隐藏控制栏');
+    } else {
+      fail('M70-1: 最终键盘方案', '未找到 M70 组合方案');
+    }
+
+    // M69-1: 点开键盘时聊天记录默认滚到底部（v2.64）— 输入框聚焦（forceChatPanelOpenOnFocus）
+    // 时调用 scrollChatToBottom()，立即滚 + 400ms 后再滚（键盘动画会改变消息区高度）。
+    if (m23AppJs.includes('M69') &&
+        m23AppJs.includes('function scrollChatToBottom') &&
+        m23AppJs.includes('messages.scrollTop = messages.scrollHeight') &&
+        m23AppJs.includes('scrollToBottomTimer = setTimeout') &&
+        m23AppJs.includes('scrollChatToBottom();')) {
+      ok('M69-1: 点开键盘聊天记录滚到底部（立即 + 400ms 防动画半路）');
+    } else {
+      fail('M69-1: 点开键盘滚到底部', '未找到 M69 scrollChatToBottom');
+    }
+
+    // M55-1: 键盘弹出时跳过 resize 布局重算（v2.50）
+    // iOS/WebView 键盘弹出触发 resize + matchMedia(landscape) 误报 → 面板被收起
+    if (m23AppJs.includes('M55') &&
+        m23AppJs.includes('const kbActive = vv && vv.height < (window.innerHeight - 40)') &&
+        m23AppJs.includes('if (kbActive) return;')) {
+      ok('M55-1: 键盘弹出跳过 resize 重算（防面板被误收起）');
+    } else {
+      fail('M55-1: 键盘弹出跳过 resize', '未找到 M55 kbActive 保护');
     }
   }
 

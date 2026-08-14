@@ -2024,6 +2024,7 @@ body {
 /* 移动端聊天展开按钮（控制栏中的聊天气泡） */
 .mobile-chat-btn {
     display: none !important;
+    position: relative; /* M71: 被@未读角标定位基准（v2.66） */
 }
 
 /* 聊天面板展开态（bottom sheet 全开） */
@@ -2427,6 +2428,7 @@ body {
 
 .chat-input-area {
     padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     background: #292b2f;
     display: flex;
     align-items: center;
@@ -2468,6 +2470,17 @@ body {
     background: rgba(255,255,255,0.08);
 }
 .chat-toolbar-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* M45: 图片按钮并入工具栏后与按钮行同尺寸（v2.40） */
+.chat-toolbar .chat-file-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+}
+.chat-toolbar .chat-file-btn svg {
     width: 18px;
     height: 18px;
 }
@@ -3306,7 +3319,31 @@ body {
         visibility: visible;
     }
     
+    /* M57: 收起态强制高度 100%（v2.52）— 键盘避让残留的 inline height（如 244px）
+       会让 translateY(100%) 收起不彻底：面板只下移残留高度，部分显示在屏幕顶部
+       （工具栏在顶部 + 下方露出主内容区/共享视频）。!important 强制收起态高度=100%，
+       无论 inline 残留什么，transform 都能把面板完全移出屏幕。 */
+    .chat-panel:not(.mobile-expanded) {
+        height: 100% !important;
+        min-height: 100% !important;
+        max-height: 100% !important;
+        top: auto !important;
+        bottom: 0 !important;
+        z-index: 70 !important;
+    }
+    
+    /* M63: 面板高度过渡动画（v2.58）— 消除键盘弹出/收起时面板高度突变（844↔500）
+       导致的输入栏瞬间跳动。键盘弹出时面板平滑收缩、收起时平滑恢复，画面不再"跳"。 */
+    .chat-panel.mobile-fullscreen {
+        /* M63: 面板高度过渡动画（v2.58）— 消除键盘弹出/收起时面板高度突变（844↔500）
+           M64: 去掉 top 过渡（v2.59）— top 现在实时跟随 vv.offsetTop 补偿 iOS
+           键盘滚动，若 top 带 0.2s 过渡反而造成"返回按钮滑下去再弹回"的抖动 */
+        transition: height 0.2s ease, min-height 0.2s ease, max-height 0.2s ease;
+    }
+    
     /* M44: 竖屏全屏聊天页（v2.39）— 仿飞书 */
+    /* M51: z-index 提到 400（v2.46）— 汉堡菜单 z-index 300 会浮在面板上
+       挡住左上角返回按钮，导致"点开聊天无法返回"。全屏聊天页应盖住汉堡。 */
     .chat-panel.mobile-fullscreen {
         position: fixed;
         top: 0;
@@ -3320,7 +3357,7 @@ body {
         border-radius: 0;
         border: none;
         background: #36393f;
-        z-index: 200;
+        z-index: 400;
     }
     .chat-panel.mobile-fullscreen .chat-messages {
         flex: 1;
@@ -3526,6 +3563,17 @@ body {
         font-size: 14px;
     }
     
+    /* M49: 移动端工具栏移到输入框下方（v2.44）— 对齐飞书键盘弹出时
+       "输入框在上、工具栏贴键盘在上方"的布局（飞书工具栏在输入框正下方）。
+       桌面端保持工具栏在输入框上方不动。 */
+    .chat-input-area .chat-input,
+    .chat-input-area .chat-send-btn {
+        order: 4;
+    }
+    .chat-input-area .chat-toolbar {
+        order: 5;
+    }
+    
     .chat-file-btn,
     .chat-send-btn {
         width: 36px;
@@ -3661,8 +3709,10 @@ body {
     
     .chat-input-area {
         padding: 6px;
+        /* M46: 底部安全区改用 padding-bottom（v2.41）— margin 方式在安卓
+           env(safe-area-inset-bottom)=0 时输入栏贴屏幕底被手势条裁切 */
+        padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
         gap: 4px;
-        margin-bottom: env(safe-area-inset-bottom, 0px);
     }
     
     .chat-file-btn,
@@ -4137,4 +4187,48 @@ body {
 
 .header-drag-handle:hover::after {
     background: rgba(88, 101, 242, 0.5);
+}
+
+/* ═══ M71: 被@通知提醒（v2.66）═══ */
+
+/* 被@的消息气泡高亮（琥珀色描边 + 微光） */
+.chat-message.mention-me .chat-message-content {
+    border-color: rgba(255, 193, 7, 0.55);
+    box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.22), 0 0 12px rgba(255, 193, 7, 0.10);
+}
+
+.chat-message.mention-me.other .chat-message-content {
+    background: #3a3318;
+}
+
+/* 「提到了我」标签 */
+.chat-message-mention-tag {
+    margin-left: 4px;
+    background: rgba(255, 193, 7, 0.16);
+    color: #ffc107;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+/* 移动端聊天按钮上的未读角标 */
+.mention-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: #f04747;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+    z-index: 5;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
 }
